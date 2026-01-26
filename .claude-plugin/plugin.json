@@ -1,0 +1,10 @@
+{
+  "name": "pr-review-toolkit",
+  "version": "1.0.0",
+  "description": "Comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues",
+  "author": {
+    "name": "Mars Systems"
+  },
+  "keywords": ["pr-review", "code-review", "gemini", "github"],
+  "license": "MIT"
+}

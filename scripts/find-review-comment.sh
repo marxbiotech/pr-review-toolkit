@@ -1,0 +1,43 @@
+#!/bin/bash
+# Find existing PR review comment by metadata marker
+# Returns comment_id if found, empty string otherwise
+#
+# Usage: ./find-review-comment.sh [PR_NUMBER]
+# If PR_NUMBER not provided, uses current branch's PR
+
+set -euo pipefail
+
+PR_NUMBER="${1:-}"
+
+# If no PR number provided, try to get from current branch
+if [ -z "$PR_NUMBER" ]; then
+  PR_NUMBER=$(gh pr view --json number -q '.number' || echo "")
+fi
+
+if [ -z "$PR_NUMBER" ]; then
+  # No PR found, return empty
+  exit 0
+fi
+
+# Find comment containing our metadata marker
+if ! API_OUTPUT=$(gh api "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" 2>&1); then
+  echo "Error: Failed to fetch PR comments: $API_OUTPUT" >&2
+  exit 1
+fi
+
+# Find all matching comment IDs
+COMMENT_IDS=$(echo "$API_OUTPUT" | jq -r '.[] | select(.body | contains("<!-- pr-review-metadata")) | .id')
+
+# Count non-empty lines (handle empty result gracefully)
+if [ -n "$COMMENT_IDS" ]; then
+  COMMENT_COUNT=$(echo "$COMMENT_IDS" | wc -l | tr -d ' ')
+else
+  COMMENT_COUNT=0
+fi
+
+if [ "$COMMENT_COUNT" -gt 1 ]; then
+  echo "Warning: Found $COMMENT_COUNT review comments, using first one" >&2
+fi
+
+COMMENT_ID=$(echo "$COMMENT_IDS" | head -1)
+echo "${COMMENT_ID:-}"
