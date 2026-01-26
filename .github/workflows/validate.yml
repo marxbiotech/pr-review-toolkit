@@ -1,0 +1,95 @@
+name: Validate Plugin
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JSON syntax
+        run: |
+          echo "Validating JSON files..."
+          jq empty .claude-plugin/plugin.json
+          jq empty .claude-plugin/marketplace.json
+          echo "✅ JSON syntax is valid"
+
+      - name: Validate required files exist
+        run: |
+          echo "Checking required files..."
+          required_files=(
+            ".claude-plugin/plugin.json"
+            ".claude-plugin/marketplace.json"
+            "README.md"
+            "LICENSE"
+          )
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            fi
+            echo "✅ Found: $file"
+          done
+
+      - name: Validate semver format
+        run: |
+          echo "Validating version format..."
+          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+
+          # Semver regex pattern
+          SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
+
+          if [[ ! "$PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in plugin.json: $PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ plugin.json version: $PLUGIN_VERSION"
+
+          if [[ ! "$MARKETPLACE_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in marketplace.json plugins[0].version: $MARKETPLACE_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ marketplace.json plugins[0].version: $MARKETPLACE_PLUGIN_VERSION"
+
+      - name: Validate version consistency
+        run: |
+          echo "Checking version consistency..."
+          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+
+          if [ "$PLUGIN_VERSION" != "$MARKETPLACE_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   plugin.json:              $PLUGIN_VERSION"
+            echo "   marketplace.json plugins: $MARKETPLACE_PLUGIN_VERSION"
+            echo ""
+            echo "Both versions must be identical. Update both files."
+            exit 1
+          fi
+
+          echo "✅ Versions are consistent: $PLUGIN_VERSION"
+
+      - name: Validate plugin metadata
+        run: |
+          echo "Validating plugin metadata..."
+
+          # Check required fields in plugin.json
+          PLUGIN_NAME=$(jq -r '.name' .claude-plugin/plugin.json)
+          PLUGIN_DESC=$(jq -r '.description' .claude-plugin/plugin.json)
+
+          if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$PLUGIN_DESC" ] || [ "$PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in plugin.json"
+            exit 1
+          fi
+
+          echo "✅ Plugin name: $PLUGIN_NAME"
+          echo "✅ Plugin description: $PLUGIN_DESC"

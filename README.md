@@ -1,6 +1,11 @@
 # PR Review Toolkit
 
+[![Version](https://img.shields.io/github/v/release/marxbiotech/pr-review-toolkit?label=version)](https://github.com/marxbiotech/pr-review-toolkit/releases)
+[![License](https://img.shields.io/github/license/marxbiotech/pr-review-toolkit)](LICENSE)
+
 A Claude Code plugin for comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
+
+> **Latest:** See [CHANGELOG.md](CHANGELOG.md) for release notes | [Releases](https://github.com/marxbiotech/pr-review-toolkit/releases) for downloads
 
 ## Features
 
@@ -24,21 +29,22 @@ Install the official pr-review-toolkit plugin first:
 
 ## Installation
 
+### From Marketplace (Recommended)
+
+In Claude Code:
+```
+/plugin marketplace add marxbiotech/pr-review-toolkit
+/plugin install pr-review-toolkit
+```
+
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/pr-review-toolkit.git
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
 
 # In Claude Code, add the plugin
 claude --plugin-dir /path/to/pr-review-toolkit
-```
-
-### From Marketplace (when published)
-
-```bash
-/plugin marketplace add your-marketplace
-/plugin install pr-review-toolkit
 ```
 
 ## Usage
