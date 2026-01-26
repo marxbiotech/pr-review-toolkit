@@ -1,0 +1,26 @@
+{
+  "name": "marxbiotech-plugins",
+  "owner": {
+    "name": "MarxBiotech",
+    "email": "xin@marxbiotech.com"
+  },
+  "metadata": {
+    "description": "MarxBiotech Claude Code plugins collection",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "pr-review-toolkit",
+      "source": "./",
+      "description": "Comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues",
+      "version": "1.0.0",
+      "author": {
+        "name": "MarxBiotech"
+      },
+      "repository": "https://github.com/marxbiotech/pr-review-toolkit",
+      "license": "MIT",
+      "keywords": ["pr-review", "code-review", "gemini", "github"],
+      "category": "code-review"
+    }
+  ]
+}
