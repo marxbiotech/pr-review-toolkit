@@ -13,7 +13,7 @@
       "name": "pr-workflow",
       "source": "./",
       "description": "Comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": {
         "name": "MarxBiotech"
       },

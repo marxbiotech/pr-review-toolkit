@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-01-29
+
+### Fixed
+
+- Move `deploy-pr` command from `.claude/commands/` to `commands/` for plugin discovery
+- Add YAML frontmatter (description, allowed-tools) and use `${CLAUDE_PLUGIN_ROOT}` for script path
+
+### Changed
+
+- Rename plugin from `pr-review-toolkit` to `pr-workflow` to avoid namespace collision with official plugins
+
 ## [1.1.0] - 2025-01-26
 
 ### Added
@@ -27,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/marxbiotech/pr-review-toolkit/releases/tag/v1.0.0
