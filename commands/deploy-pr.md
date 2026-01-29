@@ -1,3 +1,8 @@
+---
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/deploy-pr.sh:*)
+description: Deploy the current PR to a specified environment by commenting /deploy on the PR
+---
+
 # Deploy to Environment
 
 使用此命令會在當前分支的 PR 上自動留言 `/deploy <env>` 來觸發部署。
@@ -30,5 +35,5 @@
 ## 執行
 
 ```bash
-./scripts/deploy-pr.sh "$ARGUMENTS"
+${CLAUDE_PLUGIN_ROOT}/scripts/deploy-pr.sh "$ARGUMENTS"
 ```
