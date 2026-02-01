@@ -1,5 +1,5 @@
 ---
-name: PR Review and Document
+name: pr-review-and-document
 description: This skill should be used when the user asks to "review PR and save results", "run PR review with documentation", "create PR review document", "review and document PR", "save PR review to docs", "document PR review", or mentions reviewing a PR with the intention of saving the review results. Executes comprehensive PR review using pr-review-toolkit with opus model and posts results as a PR comment.
 ---
 
