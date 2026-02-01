@@ -1,5 +1,5 @@
 ---
-name: PR Review Resolver
+name: pr-review-resolver
 description: 當使用者要求「處理 PR review 問題」、「修復 review 項目」、「解決 PR 回饋」、「逐一處理 review issues」、「完成 review 任務」、「run pr review resolver」時使用此 skill。讀取當前分支 PR 的 review comment，**逐一**與使用者討論每個未解決的問題，由使用者決定處理方式。
 ---
 

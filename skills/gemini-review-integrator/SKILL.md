@@ -1,5 +1,5 @@
 ---
-name: Gemini Review Integrator
+name: gemini-review-integrator
 description: This skill should be used when the user asks to "integrate Gemini review", "merge Gemini suggestions", "add Gemini comments to PR review", "sync Gemini code assist", "combine Gemini feedback", or mentions integrating gemini-code-assist suggestions into the PR review comment. Fetches Gemini Code Assist review comments and integrates non-duplicate, non-outdated suggestions into the pr-review-and-document PR comment.
 ---
 
