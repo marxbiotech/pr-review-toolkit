@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-02-03
+
+### Changed
+
+- Use `arc-light` self-hosted runner for bump-version workflow
+
 ## [1.2.1] - 2026-02-01
 
 ### Fixed
@@ -44,7 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.0.0...v1.1.0
