@@ -14,7 +14,7 @@ on:
 
 jobs:
   bump:
-    runs-on: arc-light
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
