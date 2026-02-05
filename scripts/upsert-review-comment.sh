@@ -7,6 +7,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTENT_FILE="${1:-}"
 PR_NUMBER="${2:-}"
 
@@ -39,7 +40,7 @@ fi
 
 # If no PR number provided, try to get from current branch
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr view --json number -q '.number' || echo "")
+  PR_NUMBER=$("$SCRIPT_DIR/get-pr-number.sh" || echo "")
 fi
 
 if [ -z "$PR_NUMBER" ]; then
@@ -48,7 +49,6 @@ if [ -z "$PR_NUMBER" ]; then
 fi
 
 # Find existing review comment
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMENT_ID=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER")
 
 if [ -n "$COMMENT_ID" ]; then

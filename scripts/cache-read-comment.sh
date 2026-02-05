@@ -11,27 +11,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+
 CACHE_DIR=".pr-review-cache"
-
-# Ensure .pr-review-cache/ is in .gitignore
-ensure_gitignore() {
-  local GITIGNORE=".gitignore"
-  local ENTRY=".pr-review-cache/"
-
-  # Only run in git repo
-  if [ ! -d ".git" ]; then
-    return
-  fi
-
-  # Check if entry already exists (avoid duplicates)
-  if [ -f "$GITIGNORE" ] && grep -qxF "$ENTRY" "$GITIGNORE"; then
-    return
-  fi
-
-  # Add entry and notify user
-  echo "$ENTRY" >> "$GITIGNORE"
-  echo "Added '$ENTRY' to .gitignore" >&2
-}
 
 # Parse arguments
 PR_NUMBER=""
@@ -52,7 +34,7 @@ done
 
 # If no PR number provided, try to get from current branch
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr view --json number -q '.number' 2>/dev/null || echo "")
+  PR_NUMBER=$("$SCRIPT_DIR/get-pr-number.sh" || echo "")
 fi
 
 if [ -z "$PR_NUMBER" ]; then

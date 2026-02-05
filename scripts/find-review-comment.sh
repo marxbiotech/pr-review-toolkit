@@ -10,8 +10,9 @@ set -euo pipefail
 PR_NUMBER="${1:-}"
 
 # If no PR number provided, try to get from current branch
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr view --json number -q '.number' || echo "")
+  PR_NUMBER=$("$SCRIPT_DIR/get-pr-number.sh" || echo "")
 fi
 
 if [ -z "$PR_NUMBER" ]; then

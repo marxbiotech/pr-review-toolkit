@@ -15,7 +15,7 @@ PR_NUMBER="${1:-}"
 
 # If no PR number provided, try to get from current branch
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr view --json number -q '.number' 2>/dev/null || echo "")
+  PR_NUMBER=$("$SCRIPT_DIR/get-pr-number.sh" || echo "")
 fi
 
 if [ -z "$PR_NUMBER" ]; then

@@ -37,6 +37,7 @@
 │                                                                              │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
 │  │  .pr-review-cache/                    ← 本地快取（不進 git）           │  │
+│  │  ├── branch-map.json                  ← Branch→PR# 對應快取（TTL 1hr）│  │
 │  │  ├── pr-123.json                      ← PR #123 的審查快取             │  │
 │  │  ├── pr-456.json                      ← PR #456 的審查快取             │  │
 │  │  └── ...                                                               │  │
@@ -54,13 +55,14 @@
 │  PR Review Toolkit (plugin)                                                  │
 │                                                                              │
 │  scripts/                                                                    │
+│  ├── get-pr-number.sh         ─── Branch→PR# 快取（核心 helper）            │
 │  ├── cache-read-comment.sh    ─┐                                             │
 │  ├── cache-write-comment.sh    ├── 快取感知的包裝腳本                       │
 │  ├── cache-sync.sh             │                                             │
 │  ├── cache-cleanup.sh         ─┘                                             │
 │  │                                                                           │
 │  ├── find-review-comment.sh   ─┐                                             │
-│  └── upsert-review-comment.sh ─┴── 核心 GitHub API 腳本（保持不變）         │
+│  └── upsert-review-comment.sh ─┴── 核心 GitHub API 腳本                     │
 │                                                                              │
 │  skills/                                                                     │
 │  ├── pr-review-and-document/  ─── 執行完整審查並發布                        │
@@ -225,9 +227,25 @@
 | 完全離線 | 無法使用 | 可以查看、編輯（稍後同步） |
 | 多次執行 resolver | 重複 API 呼叫 | 只在首次或手動刷新時呼叫 |
 
+### Branch→PR 快取效能影響
+
+每個腳本原本都會呼叫 `gh pr view` 取得 PR 編號，透過 `get-pr-number.sh` 快取後：
+
+| 操作 | 修改前 | 修改後（快取命中）| 修改後（快取未命中）|
+|------|--------|-------------------|---------------------|
+| 單一腳本 | ~500ms | ~5ms | ~500ms（首次）|
+| 連續 3 個腳本 | ~1500ms | ~15ms | ~505ms |
+| 連續 6 個腳本 | ~3000ms | ~30ms | ~510ms |
+
+這對連續操作（如 `cache-write → upsert → find`）特別有幫助。
+
 ### 快取檔案結構
 
-快取儲存在你的專案目錄下的 `.pr-review-cache/` 資料夾：
+快取儲存在你的專案目錄下的 `.pr-review-cache/` 資料夾，包含兩種快取：
+
+#### 1. PR 內容快取 (`pr-{N}.json`)
+
+儲存個別 PR 的審查內容：
 
 ```json
 {
@@ -242,6 +260,37 @@
   "content_hash": "sha256:abc123..."
 }
 ```
+
+#### 2. Branch 對應快取 (`branch-map.json`)
+
+儲存 branch 名稱到 PR 編號的對應，減少重複的 `gh pr view` API 呼叫：
+
+```json
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-02-05T10:30:00Z",
+  "mappings": {
+    "feature/auth-oauth2": {
+      "pr_number": 123,
+      "cached_at": "2026-02-05T10:30:00Z",
+      "pr_state": "OPEN"
+    },
+    "fix/login-bug": {
+      "pr_number": 124,
+      "cached_at": "2026-02-05T09:00:00Z",
+      "pr_state": "OPEN"
+    }
+  }
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `pr_number` | PR 編號 |
+| `cached_at` | 快取時間（用於 TTL 檢查）|
+| `pr_state` | PR 狀態（OPEN/MERGED/CLOSED）|
+
+**TTL**: 1 小時。過期後會自動重新驗證。
 
 ### 讀取流程
 
