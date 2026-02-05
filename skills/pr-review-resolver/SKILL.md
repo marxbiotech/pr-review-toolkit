@@ -1,6 +1,7 @@
 ---
 name: pr-review-resolver
 description: 當使用者要求「處理 PR review 問題」、「修復 review 項目」、「解決 PR 回饋」、「逐一處理 review issues」、「完成 review 任務」、「run pr review resolver」時使用此 skill。讀取當前分支 PR 的 review comment，**逐一**與使用者討論每個未解決的問題，由使用者決定處理方式。
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 # PR Review Resolver
@@ -22,29 +23,25 @@ description: 當使用者要求「處理 PR review 問題」、「修復 review 
 
 ## 工作流程
 
-### 步驟 1：取得 PR Review Comment
+### 步驟 1：取得 PR Review Comment（使用快取）
 
 首先確認 PR 存在：
 
 ```bash
-gh pr view --json number -q '.number'
+PR_NUMBER=$(gh pr view --json number -q '.number')
 ```
 
 若無 PR，通知使用者並停止。
 
-接著找到 review comment：
+接著取得 review comment（使用本地快取）：
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/find-review-comment.sh
+REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER")
 ```
 
-若有回傳 comment ID，取得 comment 內容：
+此指令會先檢查本地快取，若快取不存在則從 GitHub 取得並建立快取。
 
-```bash
-gh api "/repos/{owner}/{repo}/issues/comments/{COMMENT_ID}" --jq '.body'
-```
-
-若找不到 review comment，通知使用者先執行 `pr-review-and-document` skill。
+若找不到 review comment（exit code 2），通知使用者先執行 `pr-review-and-document` skill。
 
 ### 步驟 2：解析未解決項目
 
@@ -191,14 +188,16 @@ gh api "/repos/{owner}/{repo}/issues/comments/{COMMENT_ID}" --jq '.body'
    - 更新 metadata 中的 `updated_at` 和 issues 計數
    - 將 Status 更新為適當狀態
 
-2. 寫入臨時檔案並更新 comment：
+2. 寫入臨時檔案並更新 comment（使用快取）：
 
 ```bash
 TEMP_FILE=$(mktemp)
 # 將更新後的內容寫入 $TEMP_FILE
-${CLAUDE_PLUGIN_ROOT}/scripts/upsert-review-comment.sh "$TEMP_FILE"
+${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
 rm -f "$TEMP_FILE"
 ```
+
+此指令會同時更新本地快取與 GitHub comment。
 
 ### 步驟 5：知識萃取（所有項目完成後）
 

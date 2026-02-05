@@ -2,3 +2,6 @@
 *.log
 .idea/
 .vscode/
+
+# PR Review Cache (users should also add to target repo's .gitignore)
+.pr-review-cache/

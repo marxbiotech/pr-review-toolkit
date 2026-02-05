@@ -1,6 +1,7 @@
 ---
 name: pr-review-and-document
 description: This skill should be used when the user asks to "review PR and save results", "run PR review with documentation", "create PR review document", "review and document PR", "save PR review to docs", "document PR review", or mentions reviewing a PR with the intention of saving the review results. Executes comprehensive PR review using pr-review-toolkit with opus model and posts results as a PR comment.
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 # PR Review and Document
@@ -24,14 +25,15 @@ gh pr view --json number -q '.number'
 
 If no PR exists for the current branch, inform the user and stop.
 
-### Step 2: Check Existing Review Comment
+### Step 2: Check Existing Review Comment (Cache-Aware)
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/find-review-comment.sh
+EXISTING_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER")
 ```
 
-If a comment ID is returned:
-- Fetch the existing comment body
+This uses the local cache if available, falling back to GitHub API on cache miss.
+
+If content is returned:
 - Extract metadata from `<!-- pr-review-metadata ... -->` block
 - Note the current `review_round` and issues status
 
@@ -196,15 +198,15 @@ TEMP_FILE=$(mktemp)
 # Write content to $TEMP_FILE
 ```
 
-### Step 6: Upsert to PR Comment
+### Step 6: Write Review Comment (Cache-Aware)
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/upsert-review-comment.sh "$TEMP_FILE"
+${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
 ```
 
 The script will:
-- Find existing review comment (if any) by metadata marker
-- Update it via PATCH, or create new comment
+- Update local cache (`.pr-review-cache/pr-{N}.json`)
+- Sync to GitHub via `upsert-review-comment.sh`
 - Return the comment URL
 
 ### Step 7: Cleanup and Verify
