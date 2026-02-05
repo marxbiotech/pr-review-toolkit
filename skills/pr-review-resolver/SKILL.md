@@ -182,6 +182,12 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 
 **前提條件：步驟 3.7 驗收完成後才執行此步驟。**
 
+> ⚠️ **警告：必須使用快取腳本！**
+>
+> 更新 PR review comment 時，**務必使用 `cache-write-comment.sh` 腳本**，絕對不要直接使用 `gh api` 指令。
+>
+> 直接使用 `gh api` 會導致本地快取與 GitHub 不同步，造成後續讀取到過期的資料。
+
 更新 PR review comment：
 
 1. 準備更新後的內容：
@@ -389,3 +395,35 @@ Claude:
 
 - **無 PR**：通知使用者先建立 PR（`gh pr create`）
 - **無 Review Comment**：通知使用者先執行 `pr-review-and-document` skill 產生 review
+
+## 常見錯誤
+
+### ❌ 錯誤：直接使用 `gh api` 更新 comment
+
+```bash
+# 錯誤做法 - 會導致快取不同步！
+COMMENT_ID=$(gh api repos/{owner}/{repo}/issues/${PR_NUMBER}/comments --jq '...')
+gh api repos/{owner}/{repo}/issues/comments/${COMMENT_ID} \
+  -X PATCH \
+  -f body="$NEW_CONTENT"
+```
+
+這樣做會導致：
+1. 本地快取仍保留舊版內容
+2. 下次執行 `cache-read-comment.sh` 會讀到過期資料
+3. 後續處理將基於錯誤的狀態進行
+
+### ✅ 正確：使用 `cache-write-comment.sh` 腳本
+
+```bash
+# 正確做法 - 同時更新快取與 GitHub
+TEMP_FILE=$(mktemp)
+echo "$NEW_CONTENT" > "$TEMP_FILE"
+${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
+rm -f "$TEMP_FILE"
+```
+
+此腳本會：
+1. 將內容寫入本地快取
+2. 同步更新 GitHub comment
+3. 確保快取與遠端資料一致
