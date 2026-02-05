@@ -13,13 +13,18 @@
       "name": "pr-workflow",
       "source": "./",
       "description": "Comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues",
-      "version": "1.2.2",
+      "version": "1.3.0",
       "author": {
         "name": "MarxBiotech"
       },
       "repository": "https://github.com/marxbiotech/pr-review-toolkit",
       "license": "MIT",
-      "keywords": ["pr-review", "code-review", "gemini", "github"],
+      "keywords": [
+        "pr-review",
+        "code-review",
+        "gemini",
+        "github"
+      ],
       "category": "code-review"
     }
   ]

@@ -1,10 +1,15 @@
 {
   "name": "pr-workflow",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "Comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues",
   "author": {
     "name": "MarxBiotech"
   },
-  "keywords": ["pr-review", "code-review", "gemini", "github"],
+  "keywords": [
+    "pr-review",
+    "code-review",
+    "gemini",
+    "github"
+  ],
   "license": "MIT"
 }
