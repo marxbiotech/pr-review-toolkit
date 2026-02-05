@@ -25,11 +25,13 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)
 
 ### 步驟 1：取得 PR Review Comment（使用快取）
 
-首先確認 PR 存在：
+首先取得 PR 編號（使用 branch-map 快取）：
 
 ```bash
-PR_NUMBER=$(gh pr view --json number -q '.number')
+PR_NUMBER=$("${CLAUDE_PLUGIN_ROOT}/scripts/get-pr-number.sh")
 ```
+
+此指令使用 branch-to-PR-number 快取（TTL 1 小時），快取未命中時才呼叫 GitHub API。
 
 若無 PR，通知使用者並停止。
 

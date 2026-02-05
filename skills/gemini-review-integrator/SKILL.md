@@ -16,11 +16,13 @@ Invoke this skill when:
 
 ## Workflow
 
-### Step 1: Get PR Number and Verify Prerequisites
+### Step 1: Get PR Number and Verify Prerequisites (Cache-Aware)
 
 ```bash
-PR_NUMBER=$(gh pr view --json number -q '.number')
+PR_NUMBER=$("${CLAUDE_PLUGIN_ROOT}/scripts/get-pr-number.sh")
 ```
+
+This uses the branch-to-PR-number cache (`branch-map.json`) with 1-hour TTL, falling back to GitHub API on cache miss.
 
 If no PR exists, inform the user and stop.
 
