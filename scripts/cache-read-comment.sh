@@ -13,6 +13,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_DIR=".pr-review-cache"
 
+# Ensure .pr-review-cache/ is in .gitignore
+ensure_gitignore() {
+  local GITIGNORE=".gitignore"
+  local ENTRY=".pr-review-cache/"
+
+  # Only run in git repo
+  if [ ! -d ".git" ]; then
+    return
+  fi
+
+  # Check if entry already exists (avoid duplicates)
+  if [ -f "$GITIGNORE" ] && grep -qxF "$ENTRY" "$GITIGNORE"; then
+    return
+  fi
+
+  # Add entry and notify user
+  echo "$ENTRY" >> "$GITIGNORE"
+  echo "Added '$ENTRY' to .gitignore" >&2
+}
+
 # Parse arguments
 PR_NUMBER=""
 FORCE_REFRESH=false
@@ -82,7 +102,10 @@ fetch_and_cache() {
   CONTENT_HASH="sha256:$(echo -n "$CONTENT" | shasum -a 256 | cut -d' ' -f1)"
 
   # Create cache directory if needed
-  mkdir -p "$CACHE_DIR"
+  if [ ! -d "$CACHE_DIR" ]; then
+    mkdir -p "$CACHE_DIR"
+    ensure_gitignore
+  fi
 
   # Write cache file
   CACHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

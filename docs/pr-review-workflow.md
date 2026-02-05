@@ -43,7 +43,7 @@
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  .gitignore                                                                  │
-│  └── .pr-review-cache/                   ← 記得加這行！                     │
+│  └── .pr-review-cache/                   ← 自動添加                         │
 └──────────────────────────────────────────────────────────────────────────────┘
 
                                     │
@@ -403,11 +403,13 @@ cache-write-comment.sh <CONTENT_FILE> [PR_NUMBER] [--local-only]
 | pr-cache-sync | "sync PR cache", "refresh cache", "update local cache", "pull latest review" |
 | pr-cache-cleanup | "clean up cache", "cleanup merged PR caches", "remove old caches" |
 
-### 初始設定（在你的專案中）
+### 初始設定
+
+**不需要手動設定！** 當快取腳本首次建立 `.pr-review-cache/` 目錄時，會自動將其加入 `.gitignore`。
+
+你只需要在變更後 commit 即可：
 
 ```bash
-# 將快取目錄加入 .gitignore
-echo ".pr-review-cache/" >> .gitignore
 git add .gitignore
 git commit -m "chore: ignore PR review cache directory"
 ```
