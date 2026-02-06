@@ -110,14 +110,13 @@ Key formatting rules:
 4. Insert new Gemini issues into appropriate sections (Critical, Important, Suggestions)
 5. Renumber existing issues to accommodate new entries
 
-Write updated content to temp file and upsert:
+Pipe updated content to `cache-write-comment.sh` via `--stdin`:
 
 ```bash
-TEMP_FILE=$(mktemp)
-# Write updated content to $TEMP_FILE
-${CLAUDE_PLUGIN_ROOT}/scripts/upsert-review-comment.sh "$TEMP_FILE"
-rm -f "$TEMP_FILE"
+echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
 ```
+
+This updates local cache and syncs to GitHub in one step, without temp files.
 
 ### Step 7: Report Integration Results
 

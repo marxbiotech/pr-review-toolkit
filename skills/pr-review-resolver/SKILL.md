@@ -182,6 +182,13 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 
 **前提條件：步驟 3.7 驗收完成後才執行此步驟。**
 
+> ⚠️ **警告：必須使用快取腳本！**
+>
+> 更新 PR review comment 時，**務必使用 `cache-write-comment.sh` 腳本**，絕對不要直接使用 `gh api` 指令。
+> 呼叫時**不要使用 `--local-only` 旗標**，否則只會更新本地快取而不同步 GitHub。
+>
+> 直接使用 `gh api` 會導致本地快取與 GitHub **永久不同步**——快取沒有 TTL，不會自動過期，所有後續 `cache-read-comment.sh` 讀取都會拿到過期資料，直到下一次 `cache-write-comment.sh` 或 `cache-read-comment.sh --force-refresh` 才會修正。
+
 更新 PR review comment：
 
 1. 準備更新後的內容：
@@ -190,16 +197,26 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
    - 更新 metadata 中的 `updated_at` 和 issues 計數
    - 將 Status 更新為適當狀態
 
-2. 寫入臨時檔案並更新 comment（使用快取）：
+2. 透過 `--stdin` 將更新內容直接寫入本地快取並同步至 GitHub：
 
 ```bash
-TEMP_FILE=$(mktemp)
-# 將更新後的內容寫入 $TEMP_FILE
-${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
-rm -f "$TEMP_FILE"
+echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
 ```
 
-此指令會同時更新本地快取與 GitHub comment。
+腳本會自動：
+1. 將內容寫入本地快取（`.pr-review-cache/pr-${PR_NUMBER}.json`）
+2. 嘗試同步至 GitHub（自動重試最多 3 次）
+3. 成功後更新快取中的 comment ID
+4. 自動清理內部臨時檔案（使用 `trap`）
+
+Exit codes：
+- `0` = 成功（本地快取 + GitHub 都已更新）
+- `1` = GitHub 同步失敗（本地快取是最新的，可用 `/push-review-cache` 重試）
+- `2` = 本地錯誤（如找不到 PR、內容為空）
+
+3. 若同步失敗，通知使用者：
+   - 本地快取已安全保存（`.pr-review-cache/pr-${PR_NUMBER}.json`）
+   - 使用者可稍後執行 `/push-review-cache` command 完成同步
 
 ### 步驟 5：知識萃取（所有項目完成後）
 
@@ -389,3 +406,31 @@ Claude:
 
 - **無 PR**：通知使用者先建立 PR（`gh pr create`）
 - **無 Review Comment**：通知使用者先執行 `pr-review-and-document` skill 產生 review
+
+## 常見錯誤
+
+### ❌ 錯誤：直接使用 `gh api` 更新 comment
+
+```bash
+# 錯誤做法 - 會導致快取不同步！
+COMMENT_ID=$(gh api repos/{owner}/{repo}/issues/${PR_NUMBER}/comments --jq '...')
+gh api repos/{owner}/{repo}/issues/comments/${COMMENT_ID} \
+  -X PATCH \
+  -f body="$NEW_CONTENT"
+```
+
+這樣做會導致：
+1. 本地快取仍保留舊版內容
+2. 下次執行 `cache-read-comment.sh` 會讀到過期資料
+3. 後續處理將基於錯誤的狀態進行
+
+### ✅ 正確：使用 `cache-write-comment.sh` 腳本
+
+正確做法請參考步驟 4 中的 `cache-write-comment.sh` 用法。
+
+此腳本會：
+1. 將內容寫入本地快取
+2. 嘗試同步至 GitHub（自動重試最多 3 次）
+3. 成功後更新快取中的 comment ID
+
+**注意**：若 GitHub 同步失敗（exit code 1），本地快取仍包含最新內容。使用者可稍後執行 `/push-review-cache` command 完成同步。
