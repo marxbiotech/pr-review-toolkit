@@ -173,7 +173,7 @@ if [ "$SYNC_FROM_CACHE" = false ]; then
   # Get existing cache metadata or fetch fresh
   COMMENT_ID=""
   if [ -f "$CACHE_FILE" ]; then
-    COMMENT_ID=$(jq -r '.source_comment_id // ""' "$CACHE_FILE")
+    COMMENT_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE")
   fi
 
   # Get PR metadata
@@ -219,7 +219,7 @@ if [ "$SYNC_FROM_CACHE" = false ]; then
       base: $base,
       content: $content,
       content_hash: $content_hash
-    }' > "$CACHE_FILE"
+    }' > "${CACHE_FILE}.tmp" && mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
 
   echo "Local cache updated: $CACHE_FILE" >&2
 
@@ -245,7 +245,7 @@ sync_to_github() {
 
       # Update comment ID in cache
       local new_comment_id
-      if ! new_comment_id=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER" 2>&1); then
+      if ! new_comment_id=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER"); then
         echo "Warning: Could not retrieve comment ID for cache update: $new_comment_id" >&2
         new_comment_id=""
       fi

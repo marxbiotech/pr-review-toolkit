@@ -28,9 +28,7 @@ if [ -f "$CACHE_FILE" ]; then
   # source_comment_id "0" = placeholder meaning "not yet synced to GitHub"
   # (set by cache-write-comment.sh when creating a new cache entry)
   if CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE" 2>/dev/null); then
-    # Design Decision: Keep redundant -n check as zero-cost defensive guard
-    # even though jq's // "0" fallback guarantees non-empty output,
-    # edge cases with 2>/dev/null could theoretically yield empty string
+    # Defensive: -n catches empty-string values and jq-on-empty-file edge cases
     if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
       echo "Using cached comment ID: $CACHED_ID" >&2
       echo "$CACHED_ID"
@@ -48,7 +46,7 @@ if ! API_OUTPUT=$(gh api --paginate "/repos/{owner}/{repo}/issues/${PR_NUMBER}/c
 fi
 
 # Find all matching comment IDs
-# --paginate concatenates multiple JSON arrays (one per page); .[] iterates across all of them
+# --paginate outputs one JSON array per page; jq processes each independently, so .[] iterates all elements
 COMMENT_IDS=$(echo "$API_OUTPUT" | jq -r '.[] | select(.body | contains("<!-- pr-review-metadata")) | .id')
 
 # Count non-empty lines (handle empty result gracefully)

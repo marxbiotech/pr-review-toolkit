@@ -97,32 +97,44 @@ if [ -z "$PR_NUMBER" ]; then
 fi
 
 # Find existing review comment
-COMMENT_ID=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER")
+if ! COMMENT_ID=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER"); then
+  echo "Warning: Could not find existing review comment, will create new" >&2
+  COMMENT_ID=""
+fi
 
+# Try PATCH if we have an existing comment ID
 if [ -n "$COMMENT_ID" ]; then
-  # Update existing comment
-  PATCH_ERROR=""
-  if ! COMMENT_URL=$(echo "$CONTENT" | gh api --method PATCH "/repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
+  PATCH_OUTPUT=""
+  if PATCH_OUTPUT=$(echo "$CONTENT" | gh api --method PATCH "/repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
     -F body=@- \
     --jq '.html_url' 2>&1); then
-    PATCH_ERROR="$COMMENT_URL"
-    echo "Warning: Failed to update comment $COMMENT_ID, will create new comment" >&2
-    echo "  Error: $PATCH_ERROR" >&2
-    COMMENT_ID=""  # fall through to create
+    echo "$PATCH_OUTPUT"
+    echo "Updated existing comment: $COMMENT_ID"
+    exit 0
+  fi
+
+  # PATCH failed — only fall through to POST on 404 (comment deleted)
+  if echo "$PATCH_OUTPUT" | grep -q "404"; then
+    echo "Warning: Comment $COMMENT_ID no longer exists, will create new comment" >&2
+    # Invalidate stale cache entry to prevent repeated 404 cycles
+    CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+    if [ -f "$CACHE_FILE" ]; then
+      jq '.source_comment_id = 0' "$CACHE_FILE" > "${CACHE_FILE}.tmp" && mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
+      echo "Invalidated stale comment ID in cache: $CACHE_FILE" >&2
+    fi
+  else
+    echo "Error: Failed to update comment $COMMENT_ID" >&2
+    echo "  Error: $PATCH_OUTPUT" >&2
+    exit 1
   fi
 fi
 
-if [ -n "$COMMENT_ID" ] && [ -z "${PATCH_ERROR:-}" ]; then
-  echo "$COMMENT_URL"
-  echo "Updated existing comment: $COMMENT_ID"
-else
-  # Create new comment
-  if ! COMMENT_URL=$(echo "$CONTENT" | gh api --method POST "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" \
-    -F body=@- \
-    --jq '.html_url'); then
-    echo "Error: Failed to create comment on PR #$PR_NUMBER" >&2
-    exit 1
-  fi
-  echo "$COMMENT_URL"
-  echo "Created new comment on PR #$PR_NUMBER"
+# Create new comment (no existing comment, or existing was deleted)
+if ! COMMENT_URL=$(echo "$CONTENT" | gh api --method POST "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" \
+  -F body=@- \
+  --jq '.html_url'); then
+  echo "Error: Failed to create comment on PR #$PR_NUMBER" >&2
+  exit 1
 fi
+echo "$COMMENT_URL"
+echo "Created new comment on PR #$PR_NUMBER"
