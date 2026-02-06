@@ -20,8 +20,18 @@ if [ -z "$PR_NUMBER" ]; then
   exit 0
 fi
 
-# Find comment containing our metadata marker
-if ! API_OUTPUT=$(gh api "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" 2>&1); then
+# Check local cache first — avoids API call and {owner}/{repo} mismatch issues
+CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+if [ -f "$CACHE_FILE" ]; then
+  CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE")
+  if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
+    echo "$CACHED_ID"
+    exit 0
+  fi
+fi
+
+# Fallback: find comment containing our metadata marker via API
+if ! API_OUTPUT=$(gh api --paginate "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" 2>&1); then
   echo "Error: Failed to fetch PR comments: $API_OUTPUT" >&2
   exit 1
 fi
