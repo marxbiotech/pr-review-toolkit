@@ -1,5 +1,5 @@
 #!/bin/bash
-# Find existing PR review comment by metadata marker
+# Find existing PR review comment — checks local cache first, falls back to API
 # Returns comment_id if found, empty string otherwise
 #
 # Usage: ./find-review-comment.sh [PR_NUMBER]
@@ -21,12 +21,23 @@ if [ -z "$PR_NUMBER" ]; then
 fi
 
 # Check local cache first — avoids API call and {owner}/{repo} mismatch issues
+# (gh's {owner}/{repo} resolves from git remote, which may differ from the PR's
+# target repo when working from a fork or after a repo transfer)
 CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
 if [ -f "$CACHE_FILE" ]; then
-  CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE")
-  if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
-    echo "$CACHED_ID"
-    exit 0
+  # source_comment_id "0" = placeholder meaning "not yet synced to GitHub"
+  # (set by cache-write-comment.sh when creating a new cache entry)
+  if CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE" 2>/dev/null); then
+    # Design Decision: Keep redundant -n check as zero-cost defensive guard
+    # even though jq's // "0" fallback guarantees non-empty output,
+    # edge cases with 2>/dev/null could theoretically yield empty string
+    if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
+      echo "Using cached comment ID: $CACHED_ID" >&2
+      echo "$CACHED_ID"
+      exit 0
+    fi
+  else
+    echo "Warning: Cache file is corrupted, falling through to API: $CACHE_FILE" >&2
   fi
 fi
 
@@ -37,6 +48,7 @@ if ! API_OUTPUT=$(gh api --paginate "/repos/{owner}/{repo}/issues/${PR_NUMBER}/c
 fi
 
 # Find all matching comment IDs
+# --paginate concatenates multiple JSON arrays (one per page); .[] iterates across all of them
 COMMENT_IDS=$(echo "$API_OUTPUT" | jq -r '.[] | select(.body | contains("<!-- pr-review-metadata")) | .id')
 
 # Count non-empty lines (handle empty result gracefully)

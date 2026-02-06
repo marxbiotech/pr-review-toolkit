@@ -101,12 +101,18 @@ COMMENT_ID=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER")
 
 if [ -n "$COMMENT_ID" ]; then
   # Update existing comment
+  PATCH_ERROR=""
   if ! COMMENT_URL=$(echo "$CONTENT" | gh api --method PATCH "/repos/{owner}/{repo}/issues/comments/${COMMENT_ID}" \
     -F body=@- \
-    --jq '.html_url'); then
-    echo "Error: Failed to update comment $COMMENT_ID" >&2
-    exit 1
+    --jq '.html_url' 2>&1); then
+    PATCH_ERROR="$COMMENT_URL"
+    echo "Warning: Failed to update comment $COMMENT_ID, will create new comment" >&2
+    echo "  Error: $PATCH_ERROR" >&2
+    COMMENT_ID=""  # fall through to create
   fi
+fi
+
+if [ -n "$COMMENT_ID" ] && [ -z "${PATCH_ERROR:-}" ]; then
   echo "$COMMENT_URL"
   echo "Updated existing comment: $COMMENT_ID"
 else

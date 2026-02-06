@@ -245,7 +245,10 @@ sync_to_github() {
 
       # Update comment ID in cache
       local new_comment_id
-      new_comment_id=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER" 2>/dev/null || echo "")
+      if ! new_comment_id=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER" 2>&1); then
+        echo "Warning: Could not retrieve comment ID for cache update: $new_comment_id" >&2
+        new_comment_id=""
+      fi
       if [ -n "$new_comment_id" ] && [ "$new_comment_id" != "0" ]; then
         jq --argjson comment_id "$new_comment_id" '.source_comment_id = $comment_id' "$CACHE_FILE" > "${CACHE_FILE}.tmp"
         mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
