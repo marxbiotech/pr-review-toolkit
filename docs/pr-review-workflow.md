@@ -133,10 +133,10 @@
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  步驟 5: 發布審查（快取感知）                                                │
 │                                                                              │
-│  cache-write-comment.sh $TEMP_FILE $PR_NUMBER                                │
+│  echo "$CONTENT" | cache-write-comment.sh --stdin $PR_NUMBER                 │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-│  │  1. 更新本地快取                                                       │ │
-│  │  2. 同步到 GitHub（透過 upsert-review-comment.sh）                     │ │
+│  │  1. 更新本地快取（.pr-review-cache/pr-{N}.json）                       │ │
+│  │  2. 透過 stdin pipe 同步到 GitHub（upsert --stdin，無 temp file）      │ │
 │  │  3. 回傳 comment URL                                                   │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -341,11 +341,14 @@ cache-read-comment.sh [PR_NUMBER] [--force-refresh]
 ### 寫入流程
 
 ```
-cache-write-comment.sh <CONTENT_FILE> [PR_NUMBER] [--local-only]
+cache-write-comment.sh --stdin [PR_NUMBER] [--local-only]
+cache-write-comment.sh --sync-from-cache [PR_NUMBER] [--force]
                         │
                         ▼
               ┌─────────────────┐
               │  更新本地快取   │
+              │  (.pr-review-   │
+              │  cache/pr-N.json│)
               └─────────────────┘
                         │
                         ▼
@@ -358,8 +361,9 @@ cache-write-comment.sh <CONTENT_FILE> [PR_NUMBER] [--local-only]
                 ▼            ▼
           ┌──────────┐  ┌─────────────────────┐
           │ 完成     │  │  同步到 GitHub      │
-          │（僅快取）│  │  upsert-review-     │
-          └──────────┘  │  comment.sh         │
+          │（僅快取）│  │  stdin pipe 到      │
+          └──────────┘  │  upsert --stdin     │
+                        │（無 temp file）     │
                         └─────────────────────┘
                                   │
                                   ▼

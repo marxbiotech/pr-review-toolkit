@@ -185,8 +185,9 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 > ⚠️ **警告：必須使用快取腳本！**
 >
 > 更新 PR review comment 時，**務必使用 `cache-write-comment.sh` 腳本**，絕對不要直接使用 `gh api` 指令。
+> 呼叫時**不要使用 `--local-only` 旗標**，否則只會更新本地快取而不同步 GitHub。
 >
-> 直接使用 `gh api` 會導致本地快取與 GitHub 不同步，造成後續讀取到過期的資料。
+> 直接使用 `gh api` 會導致本地快取與 GitHub **永久不同步**——快取沒有 TTL，不會自動過期，所有後續 `cache-read-comment.sh` 讀取都會拿到過期資料，直到下一次 `cache-write-comment.sh` 或 `cache-read-comment.sh --force-refresh` 才會修正。
 
 更新 PR review comment：
 
@@ -196,16 +197,26 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
    - 更新 metadata 中的 `updated_at` 和 issues 計數
    - 將 Status 更新為適當狀態
 
-2. 寫入臨時檔案並更新 comment（使用快取）：
+2. 透過 `--stdin` 將更新內容直接寫入本地快取並同步至 GitHub：
 
 ```bash
-TEMP_FILE=$(mktemp)
-# 將更新後的內容寫入 $TEMP_FILE
-${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
-rm -f "$TEMP_FILE"
+echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
 ```
 
-此指令會同時更新本地快取與 GitHub comment。
+腳本會自動：
+1. 將內容寫入本地快取（`.pr-review-cache/pr-${PR_NUMBER}.json`）
+2. 嘗試同步至 GitHub（自動重試最多 3 次）
+3. 成功後更新快取中的 comment ID
+4. 自動清理內部臨時檔案（使用 `trap`）
+
+Exit codes：
+- `0` = 成功（本地快取 + GitHub 都已更新）
+- `1` = GitHub 同步失敗（本地快取是最新的，可用 `/push-review-cache` 重試）
+- `2` = 本地錯誤（如找不到 PR、內容為空）
+
+3. 若同步失敗，通知使用者：
+   - 本地快取已安全保存（`.pr-review-cache/pr-${PR_NUMBER}.json`）
+   - 使用者可稍後執行 `/push-review-cache` command 完成同步
 
 ### 步驟 5：知識萃取（所有項目完成後）
 
@@ -415,15 +426,11 @@ gh api repos/{owner}/{repo}/issues/comments/${COMMENT_ID} \
 
 ### ✅ 正確：使用 `cache-write-comment.sh` 腳本
 
-```bash
-# 正確做法 - 同時更新快取與 GitHub
-TEMP_FILE=$(mktemp)
-echo "$NEW_CONTENT" > "$TEMP_FILE"
-${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh "$TEMP_FILE" "$PR_NUMBER"
-rm -f "$TEMP_FILE"
-```
+正確做法請參考步驟 4 中的 `cache-write-comment.sh` 用法。
 
 此腳本會：
 1. 將內容寫入本地快取
-2. 同步更新 GitHub comment
-3. 確保快取與遠端資料一致
+2. 嘗試同步至 GitHub（自動重試最多 3 次）
+3. 成功後更新快取中的 comment ID
+
+**注意**：若 GitHub 同步失敗（exit code 1），本地快取仍包含最新內容。使用者可稍後執行 `/push-review-cache` command 完成同步。
