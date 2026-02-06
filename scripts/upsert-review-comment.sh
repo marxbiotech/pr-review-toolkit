@@ -114,9 +114,12 @@ if [ -n "$COMMENT_ID" ]; then
   fi
 
   # PATCH failed — only fall through to POST on 404 (comment deleted)
-  if echo "$PATCH_OUTPUT" | grep -q "404"; then
+  if echo "$PATCH_OUTPUT" | grep -q '"Not Found"'; then
     echo "Warning: Comment $COMMENT_ID no longer exists, will create new comment" >&2
     # Invalidate stale cache entry to prevent repeated 404 cycles
+    # Design Decision: Not guarding jq/mv with if-block despite set -e — jq and mv operate on a
+    # file we just confirmed exists, on content we control; failure here (disk full, permissions)
+    # indicates a systemic issue where proceeding to POST would also likely fail.
     CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
     if [ -f "$CACHE_FILE" ]; then
       jq '.source_comment_id = 0' "$CACHE_FILE" > "${CACHE_FILE}.tmp" && mv "${CACHE_FILE}.tmp" "$CACHE_FILE"

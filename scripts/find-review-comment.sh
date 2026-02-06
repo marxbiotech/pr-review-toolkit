@@ -29,6 +29,9 @@ if [ -f "$CACHE_FILE" ]; then
   # (set by cache-write-comment.sh when creating a new cache entry)
   if CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE" 2>/dev/null); then
     # Defensive: -n catches empty-string values and jq-on-empty-file edge cases
+    # Design Decision: No numeric regex validation here — cache is written exclusively by our own scripts
+    # (cache-write-comment.sh), so non-numeric values like "null" or "abc" cannot occur in practice.
+    # Full cache schema validation belongs in a future shared lib, not piecemeal per-field checks.
     if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
       echo "Using cached comment ID: $CACHED_ID" >&2
       echo "$CACHED_ID"
