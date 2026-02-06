@@ -1,5 +1,5 @@
 #!/bin/bash
-# Find existing PR review comment by metadata marker
+# Find existing PR review comment — checks local cache first, falls back to API
 # Returns comment_id if found, empty string otherwise
 #
 # Usage: ./find-review-comment.sh [PR_NUMBER]
@@ -20,13 +20,36 @@ if [ -z "$PR_NUMBER" ]; then
   exit 0
 fi
 
-# Find comment containing our metadata marker
-if ! API_OUTPUT=$(gh api "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" 2>&1); then
+# Check local cache first — avoids API call and {owner}/{repo} mismatch issues
+# (gh's {owner}/{repo} resolves from git remote, which may differ from the PR's
+# target repo when working from a fork or after a repo transfer)
+CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+if [ -f "$CACHE_FILE" ]; then
+  # source_comment_id "0" = placeholder meaning "not yet synced to GitHub"
+  # (set by cache-write-comment.sh when creating a new cache entry)
+  if CACHED_ID=$(jq -r '.source_comment_id // "0"' "$CACHE_FILE" 2>/dev/null); then
+    # Defensive: -n catches empty-string values and jq-on-empty-file edge cases
+    # Design Decision: No numeric regex validation here — cache is written exclusively by our own scripts
+    # (cache-write-comment.sh), so non-numeric values like "null" or "abc" cannot occur in practice.
+    # Full cache schema validation belongs in a future shared lib, not piecemeal per-field checks.
+    if [ "$CACHED_ID" != "0" ] && [ -n "$CACHED_ID" ]; then
+      echo "Using cached comment ID: $CACHED_ID" >&2
+      echo "$CACHED_ID"
+      exit 0
+    fi
+  else
+    echo "Warning: Cache file is corrupted, falling through to API: $CACHE_FILE" >&2
+  fi
+fi
+
+# Fallback: find comment containing our metadata marker via API
+if ! API_OUTPUT=$(gh api --paginate "/repos/{owner}/{repo}/issues/${PR_NUMBER}/comments" 2>&1); then
   echo "Error: Failed to fetch PR comments: $API_OUTPUT" >&2
   exit 1
 fi
 
 # Find all matching comment IDs
+# --paginate outputs one JSON array per page; jq processes each independently, so .[] iterates all elements
 COMMENT_IDS=$(echo "$API_OUTPUT" | jq -r '.[] | select(.body | contains("<!-- pr-review-metadata")) | .id')
 
 # Count non-empty lines (handle empty result gracefully)
