@@ -1,7 +1,7 @@
 ---
 name: pr-review-resolver
 description: 當使用者要求「處理 PR review 問題」、「修復 review 項目」、「解決 PR 回饋」、「逐一處理 review issues」、「完成 review 任務」、「run pr review resolver」、「resolve PR review」、「address review comments」、「fix review findings」、「處理 code review」時使用此 skill。讀取當前分支 PR 的 review comment，逐一與使用者討論每個未解決的問題，由使用者決定處理方式，並以背景子任務並行執行修復。
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(git *), Edit, Write, Read, Glob, Grep, Task
+allowed-tools: Read, Edit, Write, Glob, Grep, Task, Bash(git *), Bash(mkdir *), Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 # PR Review Resolver
@@ -331,7 +331,7 @@ Exit codes：
 
 ## 互動範例
 
-完整互動範例請參考 [`references/interaction-example.md`](references/interaction-example.md)。
+完整互動範例（含並行背景子任務的正確流程）在 [`references/interaction-example.md`](references/interaction-example.md)。在開始逐一處理問題前，先讀取此範例以確保互動流程正確。
 
 ## 無 PR 或無 Review Comment 的處理
 
@@ -342,4 +342,9 @@ Exit codes：
 
 ### ❌ 直接使用 `gh api` 更新 comment
 
-直接使用 `gh api` 會導致本地快取與 GitHub 永久不同步。正確做法及詳細說明請參考**步驟 4：更新 Review Comment** 中的警告。
+```bash
+# 錯誤做法 - 永遠不要這樣做！
+gh api repos/{owner}/{repo}/issues/comments/${COMMENT_ID} -X PATCH -f body="..."
+```
+
+這會導致本地快取與 GitHub 永久不同步。正確做法及錯誤恢復方式請參考**步驟 4：更新 Review Comment** 中的警告。

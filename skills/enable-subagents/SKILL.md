@@ -34,8 +34,8 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
 | `Glob` | 搜尋檔案路徑 |
 | `Grep` | 搜尋檔案內容 |
 | `Task` | 啟動背景子任務 |
-| `Bash(mkdir:*)` | 建立必要目錄 |
-| `Bash(git:*)` | 執行 git 指令（如 `git diff`） |
+| `Bash(mkdir *)` | 建立必要目錄 |
+| `Bash(git *)` | 執行 git 指令（如 `git diff`） |
 | `Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)` | 執行 plugin scripts |
 
 當這些操作在 subagent 中執行時，需要父會話已經有對應權限，否則會被阻擋。
@@ -87,8 +87,8 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
   "Glob",
   "Grep",
   "Task",
-  "Bash(mkdir:*)",
-  "Bash(git:*)",
+  "Bash(mkdir *)",
+  "Bash(git *)",
   "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)"
 ]
 ```
@@ -125,8 +125,8 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
       "Glob",
       "Grep",
       "Task",
-      "Bash(mkdir:*)",
-      "Bash(git:*)",
+      "Bash(mkdir *)",
+      "Bash(git *)",
       "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)"
     ]
   }
@@ -176,8 +176,8 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
       "Glob",
       "Grep",
       "Task",
-      "Bash(mkdir:*)",
-      "Bash(git:*)",
+      "Bash(mkdir *)",
+      "Bash(git *)",
       "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)"
     ]
   }
@@ -194,7 +194,7 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
   "permissions": {
     "allow": [
       "Read",
-      "Bash(git:*)"
+      "Bash(git *)"
     ]
   }
 }
@@ -208,13 +208,13 @@ pr-review-resolver 等 skill 會啟動 subagent 來執行任務。Subagent 需�
   "permissions": {
     "allow": [
       "Read",
-      "Bash(git:*)",
+      "Bash(git *)",
       "Edit",
       "Write",
       "Glob",
       "Grep",
       "Task",
-      "Bash(mkdir:*)",
+      "Bash(mkdir *)",
       "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)"
     ]
   }
