@@ -1,7 +1,7 @@
 ---
 name: pr-review-resolver
-description: 當使用者要求「處理 PR review 問題」、「修復 review 項目」、「解決 PR 回饋」、「逐一處理 review issues」、「完成 review 任務」、「run pr review resolver」時使用此 skill。讀取當前分支 PR 的 review comment，**逐一**與使用者討論每個未解決的問題，由使用者決定處理方式。
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*)
+description: 當使用者要求「處理 PR review 問題」、「修復 review 項目」、「解決 PR 回饋」、「逐一處理 review issues」、「完成 review 任務」、「run pr review resolver」、「resolve PR review」、「address review comments」、「fix review findings」、「處理 code review」時使用此 skill。讀取當前分支 PR 的 review comment，逐一與使用者討論每個未解決的問題，由使用者決定處理方式，並以背景子任務並行執行修復。
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(git *), Edit, Write, Read, Glob, Grep, Task
 ---
 
 # PR Review Resolver
@@ -331,76 +331,7 @@ Exit codes：
 
 ## 互動範例
 
-以下是正確的互動流程範例（含並行背景子任務）：
-
-```
-Claude: 我找到了 3 個未解決的問題。讓我們逐一處理。
-
-**問題 1/3：Silent Cart Quantity Fetch Failure**
-
-📍 位置：`apps/client/src/lib/context/cart-drawer-context.tsx:59-60`
-
-🔍 問題：Cart 數量在 API 失敗時會默默地變成 0。使用者在有商品的情況下會看到空的購物車 badge。
-
-💡 影響：使用者體驗受損，可能導致重複加入商品。
-
-讓我先檢視實際的原始碼...
-
-[讀取檔案後]
-
-目前的程式碼確實沒有處理錯誤狀態。有以下處理方式：
-
-1. **修復** - 加入 `isError` 到 context value，讓 UI 可以顯示錯誤狀態
-2. **延後** - 這是 edge case，可在下個 PR 處理
-3. **標記為 N/A** - 如果認為 0 是可接受的 fallback
-
-你想要怎麼處理這個問題？
-
-<options>
-<option>修復這個問題</option>
-<option>延後到下個 PR</option>
-<option>標記為不適用 (N/A)</option>
-</options>
-```
-
-**使用者選擇「修復」後：**
-
-```
-Claude: 目標檔案：`cart-drawer-context.tsx`。沒有其他子任務正在修改此檔案。
-
-🔧 已啟動背景子任務修復此問題。
-
-✓ 已記錄。接下來看下一個問題（2/3）。
-
----
-
-**問題 2/3：Missing Error Boundary in Checkout**
-
-📍 位置：`apps/client/src/components/checkout/payment-form.tsx:120-135`
-...
-```
-
-**所有問題討論完畢後，進入驗收階段：**
-
-```
-Claude:
-📊 處理總覽：
-- 🔧 修復中：2 個（背景子任務進行中）
-- ⏭️ 延後：1 個
-
-正在等待子任務完成...
-
-✅ 問題 1（Silent Cart Failure）— 修復完成
-✅ 問題 3（Unused Import）— 修復完成
-
-驗證修改範圍... 所有變更都在預期檔案內。
-
-| # | 問題 | 決策 | 狀態 |
-|---|------|------|------|
-| 1 | Silent Cart Failure | 修復 | ✅ Fixed |
-| 2 | Missing Error Boundary | 延後 | ⏭️ Deferred |
-| 3 | Unused Import | 修復 | ✅ Fixed |
-```
+完整互動範例請參考 [`references/interaction-example.md`](references/interaction-example.md)。
 
 ## 無 PR 或無 Review Comment 的處理
 
@@ -409,28 +340,6 @@ Claude:
 
 ## 常見錯誤
 
-### ❌ 錯誤：直接使用 `gh api` 更新 comment
+### ❌ 直接使用 `gh api` 更新 comment
 
-```bash
-# 錯誤做法 - 會導致快取不同步！
-COMMENT_ID=$(gh api repos/{owner}/{repo}/issues/${PR_NUMBER}/comments --jq '...')
-gh api repos/{owner}/{repo}/issues/comments/${COMMENT_ID} \
-  -X PATCH \
-  -f body="$NEW_CONTENT"
-```
-
-這樣做會導致：
-1. 本地快取仍保留舊版內容
-2. 下次執行 `cache-read-comment.sh` 會讀到過期資料
-3. 後續處理將基於錯誤的狀態進行
-
-### ✅ 正確：使用 `cache-write-comment.sh` 腳本
-
-正確做法請參考步驟 4 中的 `cache-write-comment.sh` 用法。
-
-此腳本會：
-1. 將內容寫入本地快取
-2. 嘗試同步至 GitHub（自動重試最多 3 次）
-3. 成功後更新快取中的 comment ID
-
-**注意**：若 GitHub 同步失敗（exit code 1），本地快取仍包含最新內容。使用者可稍後執行 `/push-review-cache` command 完成同步。
+直接使用 `gh api` 會導致本地快取與 GitHub 永久不同步。正確做法及詳細說明請參考**步驟 4：更新 Review Comment** 中的警告。
