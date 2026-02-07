@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/deploy-pr.sh:*)
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/deploy-pr.sh *)
 description: Deploy the current PR to a specified environment by commenting /deploy on the PR
 ---
 
