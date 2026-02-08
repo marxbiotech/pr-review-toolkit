@@ -187,7 +187,7 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 > 更新 PR review comment 時，**務必使用 `cache-write-comment.sh` 腳本**，絕對不要直接使用 `gh api` 指令。
 > 呼叫時**不要使用 `--local-only` 旗標**，否則只會更新本地快取而不同步 GitHub。
 >
-> 直接使用 `gh api` 會導致本地快取與 GitHub **永久不同步**——快取沒有 TTL，不會自動過期，所有後續 `cache-read-comment.sh` 讀取都會拿到過期資料，直到下一次 `cache-write-comment.sh` 或 `cache-read-comment.sh --force-refresh` 才會修正。
+> 直接使用 `gh api` 會導致本地快取與 GitHub **永久不同步**——comment 內容快取沒有 TTL（與 branch-map 快取的 1 小時 TTL 不同），不會自動過期，所有後續 `cache-read-comment.sh` 讀取都會拿到過期資料，直到下一次 `cache-write-comment.sh` 或 `cache-read-comment.sh --force-refresh` 才會修正。
 
 更新 PR review comment：
 
@@ -207,7 +207,7 @@ echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh -
 1. 將內容寫入本地快取（`.pr-review-cache/pr-${PR_NUMBER}.json`）
 2. 嘗試同步至 GitHub（自動重試最多 3 次）
 3. 成功後更新快取中的 comment ID
-4. 自動清理內部臨時檔案（使用 `trap`）
+4. 使用 atomic write（先寫入 `.tmp` 再 `mv`）避免寫入中斷造成損壞
 
 Exit codes：
 - `0` = 成功（本地快取 + GitHub 都已更新）

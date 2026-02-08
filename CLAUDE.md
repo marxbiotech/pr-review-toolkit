@@ -5,7 +5,7 @@
 `allowed-tools` frontmatter 中的 Bash 權限**必須使用 space 語法**，不使用 colon 語法：
 
 - `Bash(git *)` — 正確
-- `Bash(git:*)` — deprecated（legacy 語法，未來會被移除）
+- `Bash(git:*)` — deprecated（legacy 語法，已棄用）
 
 詳見 [Claude Code permissions 文檔](https://code.claude.com/docs/en/permissions)：
 > "The legacy `:*` suffix syntax is equivalent to ` *` but is deprecated."
