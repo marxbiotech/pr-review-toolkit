@@ -2,18 +2,18 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Claude Code plugin for PR review workflows. Plugin metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; keep their plugin version fields in sync. Skills are stored in `skills/<skill-name>/SKILL.md`, with supporting material under each skill's `references/` directory when needed. User-facing command docs live in `commands/`. Reusable shell utilities live in `scripts/`, with shared helpers in `scripts/lib/common.sh`. Workflow and release notes are documented in `docs/`, `README.md`, `CHANGELOG.md`, and `RELEASING.md`. GitHub Actions are in `.github/workflows/`.
+This repository is a Claude Code plugin for PR review workflows with companion Codex packaging. Claude metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; Codex metadata lives in `.agents/plugins/marketplace.json` and `.codex-plugin/plugin.json`. Keep all plugin version fields in sync. Claude skills are stored in `skills/<skill-name>/SKILL.md`, with supporting material under each skill's `references/` directory when needed. User-facing command docs live in `commands/`. Reusable shell utilities live in `scripts/`, with shared helpers in `scripts/lib/common.sh`. Workflow and release notes are documented in `docs/`, `README.md`, `CHANGELOG.md`, and `RELEASING.md`. GitHub Actions are in `.github/workflows/`.
 
 ### Codex Skills
 
-Codex-facing skills live under `codex/skills/<skill-name>/SKILL.md`, parallel to the Claude `skills/` tree. They target Codex's skill runtime and resolve their toolkit root via the `${PR_REVIEW_TOOLKIT_ROOT}` environment variable rather than `${CLAUDE_PLUGIN_ROOT}`, and they reuse the helper scripts under `scripts/` instead of duplicating cache logic. Currently shipped: `codex-review-pass` (review producer with bootstrap and append modes) and `codex-fix-worker` (bounded per-issue fix skill invoked by the dev agent). Codex marketplace packaging is not yet finalized; until then, install locally by copying or symlinking the `codex/skills/<skill-name>/` directory into your Codex skills location. See `README.md` for the current install steps and `docs/codex-integration-design.md` for the contract.
+Codex-facing skills live under `codex/skills/<skill-name>/SKILL.md`, parallel to the Claude `skills/` tree. They target Codex's skill runtime and resolve their toolkit root via the `${PR_REVIEW_TOOLKIT_ROOT}` environment variable rather than `${CLAUDE_PLUGIN_ROOT}`, and they reuse the helper scripts under `scripts/` instead of duplicating cache logic. Currently shipped: `codex-review-pass` (review producer with bootstrap and append modes) and `codex-fix-worker` (bounded per-issue fix skill invoked by the dev agent). The Codex marketplace entry points to the repo root, and the Codex plugin manifest points `skills` to `./codex/skills/`; keep both paths stable when moving files. See `README.md` for source-install steps and `docs/codex-integration-design.md` for the contract.
 
 ## Build, Test, and Development Commands
 
 There is no compile step; this project is Markdown, JSON, and Bash.
 
 - `bash -n scripts/*.sh scripts/lib/*.sh`: syntax-check shell scripts.
-- `jq empty .claude-plugin/plugin.json .claude-plugin/marketplace.json`: validate plugin JSON.
+- `jq empty .claude-plugin/plugin.json .claude-plugin/marketplace.json .agents/plugins/marketplace.json .codex-plugin/plugin.json`: validate plugin JSON.
 - `./scripts/cache-sync.sh [PR_NUMBER]`: refresh the local `.pr-review-cache/` entry from GitHub.
 - `./scripts/deploy-pr.sh`: deploy current branch changes through the project workflow.
 - `git diff --check`: catch whitespace errors before committing.
@@ -30,7 +30,7 @@ No formal test suite is present. Validate changes with targeted command checks: 
 
 ## Commit & Pull Request Guidelines
 
-Recent history follows Conventional Commits, for example `fix(resolver): add missing allowed-tools` and `feat(cache): eliminate temp files with stdin pipe architecture`. Use `feat`, `fix`, `chore`, or `docs`, with an optional scope. PRs should include a concise summary, validation commands run, linked issues when applicable, and screenshots or pasted command output only when they clarify behavior. For release PRs, update `CHANGELOG.md` and keep `.claude-plugin/plugin.json` aligned with `.claude-plugin/marketplace.json`.
+Recent history follows Conventional Commits, for example `fix(resolver): add missing allowed-tools` and `feat(cache): eliminate temp files with stdin pipe architecture`. Use `feat`, `fix`, `chore`, or `docs`, with an optional scope. PRs should include a concise summary, validation commands run, linked issues when applicable, and screenshots or pasted command output only when they clarify behavior. For release PRs, update `CHANGELOG.md` and keep `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `.codex-plugin/plugin.json` aligned.
 
 ## Security & Configuration Tips
 

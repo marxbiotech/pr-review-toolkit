@@ -1,0 +1,39 @@
+{
+  "name": "pr-review-toolkit",
+  "version": "2.0.0",
+  "description": "PR review workflow skills for Codex: review passes, targeted fixes, and shared GitHub comment state",
+  "author": {
+    "name": "MarxBiotech",
+    "email": "xin@marxbiotech.com",
+    "url": "https://github.com/marxbiotech"
+  },
+  "homepage": "https://github.com/marxbiotech/pr-review-toolkit",
+  "repository": "https://github.com/marxbiotech/pr-review-toolkit",
+  "license": "MIT",
+  "keywords": [
+    "pr-review",
+    "code-review",
+    "github",
+    "codex",
+    "claude"
+  ],
+  "skills": "./codex/skills/",
+  "interface": {
+    "displayName": "PR Review Toolkit",
+    "shortDescription": "Run Codex PR reviews and fix selected findings through one shared review comment.",
+    "longDescription": "Codex skills for participating in the pr-review-toolkit workflow. The skills use .pr-review-cache/pr-#.json as the only review state contract and reuse the repository's shared cache/comment helper scripts.",
+    "developerName": "MarxBiotech",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/marxbiotech/pr-review-toolkit",
+    "defaultPrompt": [
+      "Run a Codex PR review pass.",
+      "Fix one selected PR review issue.",
+      "Update the canonical PR review comment."
+    ],
+    "brandColor": "#2563EB"
+  }
+}
