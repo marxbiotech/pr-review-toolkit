@@ -47,6 +47,23 @@ git clone https://github.com/marxbiotech/pr-review-toolkit.git
 claude --plugin-dir /path/to/pr-review-toolkit
 ```
 
+### Codex Skills (From Source)
+
+This repository also includes Codex skill definitions under `codex/skills/`:
+
+| Skill | Description |
+|-------|-------------|
+| **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
+| **codex-fix-worker** | Fix one selected PR review issue and update that issue's status |
+
+Until Codex marketplace metadata is finalized, install from source by making these skill directories available to Codex and setting the toolkit root:
+
+```bash
+export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
+```
+
+Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
+
 ## Usage
 
 ### PR Review and Document
@@ -131,6 +148,8 @@ The plugin includes shared scripts in `scripts/`:
 | `find-review-comment.sh` | Find existing PR review comment by metadata marker |
 | `upsert-review-comment.sh` | Create or update PR review comment |
 | `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist comments |
+| `review-metadata-upgrade.sh` | Normalize PR review metadata to schema 1.1 |
+| `review-metadata-replace.sh` | Replace the hidden metadata block without changing issue sections |
 
 ## License
 

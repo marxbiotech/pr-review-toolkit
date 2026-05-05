@@ -57,8 +57,8 @@ The script returns JSON with Gemini suggestions, including:
 Apply filters to Gemini suggestions:
 
 1. **Exclude outdated comments**: Skip comments where `is_outdated: true`
-2. **Check existing integration**: Parse pr-review-and-document comment metadata for `gemini_integrated_ids`
-3. **Skip already integrated**: Exclude comments whose IDs are in `gemini_integrated_ids`
+2. **Check existing integration**: Parse metadata for `review_sources.gemini.consumed_comment_ids`; fall back to legacy `gemini_integrated_ids`
+3. **Skip already integrated**: Exclude comments whose IDs are already consumed
 
 ### Step 4: Categorize Suggestions
 
@@ -104,7 +104,18 @@ Key formatting rules:
 1. Fetch existing pr-review-and-document comment body
 2. Parse metadata JSON from `<!-- pr-review-metadata ... -->` block
 3. Update metadata:
-   - Add `gemini_integrated_ids` array with newly integrated comment IDs
+   - Upgrade metadata to schema `1.1` with the shared helper when needed:
+     ```bash
+     METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer gemini-review-integrator)
+     ```
+   - Replace the updated hidden metadata block with:
+     ```bash
+     UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
+     ```
+   - Add consumed GitHub comment IDs to `review_sources.gemini.consumed_comment_ids`
+   - Preserve legacy `gemini_integrated_ids` during the compatibility window
+   - Set `review_sources.gemini.last_integrated_at`
+   - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues
    - Increment issue counts in `issues` object
    - Update `updated_at` timestamp
 4. Insert new Gemini issues into appropriate sections (Critical, Important, Suggestions)
@@ -113,10 +124,17 @@ Key formatting rules:
 Pipe updated content to `cache-write-comment.sh` via `--stdin`:
 
 ```bash
-echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' ".pr-review-cache/pr-${PR_NUMBER}.json" 2>/dev/null || echo "")
+
+if [ -n "$EXPECTED_CONTENT_HASH" ]; then
+  printf '%s\n' "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"
+else
+  printf '%s\n' "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+fi
 ```
 
 This updates local cache and syncs to GitHub in one step, without temp files.
+If the script exits `4`, another tool updated the cache; re-read the latest comment, merge only the new Gemini integrations, and retry once.
 
 ### Step 7: Report Integration Results
 
@@ -135,11 +153,17 @@ Gemini Review Integration Complete:
 
 ## Metadata Schema Extension
 
-The pr-review-and-document metadata is extended with:
+The pr-review-and-document metadata is extended with schema `1.1` source fields:
 
 ```json
 {
-  "gemini_integrated_ids": [2726014213, 2726014217, ...],
+  "review_sources": {
+    "gemini": {
+      "consumed_comment_ids": [2726014213, 2726014217],
+      "last_integrated_at": "2026-01-26T12:00:00Z"
+    }
+  },
+  "gemini_integrated_ids": [2726014213, 2726014217],
   "gemini_integration_date": "2026-01-26T12:00:00Z"
 }
 ```
@@ -148,6 +172,9 @@ This enables:
 - Tracking which Gemini comments have been integrated
 - Preventing duplicate integration across multiple runs
 - Audit trail for integrated suggestions
+
+`gemini_integrated_ids` and `gemini_integration_date` are legacy compatibility fields. Read from `review_sources.gemini.*` first, but preserve legacy fields while older skills may still read them.
+Use `${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh` to normalize old metadata before applying Gemini-specific updates, then `${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh` to write the updated JSON back without changing unrelated sections.
 
 ## Gemini Comment Structure
 
@@ -171,8 +198,8 @@ Gemini Code Assist comments have these characteristics:
 Gemini may perform multiple review rounds on a PR. The integration handles this by:
 
 1. **ID-based deduplication**: Each comment has a unique ID
-2. **Cumulative tracking**: `gemini_integrated_ids` grows with each integration
-3. **New comments only**: Only comments not in `gemini_integrated_ids` are processed
+2. **Cumulative tracking**: `review_sources.gemini.consumed_comment_ids` grows with each integration
+3. **New comments only**: Only comments not in `consumed_comment_ids` are processed
 
 To re-integrate after Gemini runs another review:
 1. Run this skill again

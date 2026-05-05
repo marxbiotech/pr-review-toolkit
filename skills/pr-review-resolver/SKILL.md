@@ -52,6 +52,7 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 **未解決指標：**
 - `⚠️` 需要注意的項目（待處理）
 - `🔴` 阻擋性問題（必須在 merge 前解決）
+- `[Codex]` 或 `[Gemini]` 來源的 `⚠️` / `🔴` details
 - 表格中的 `⚠️ Pending` 狀態
 - 沒有 `✅` 或 `⏭️` 前綴的 details summary
 - 「Action Plan」中沒有完成標記 `[x]` 的任務
@@ -60,6 +61,11 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 - `✅` 問題已解決（程式碼變更已完成）
 - `⏭️` 刻意延後或不適用（標記為 Deferred / N/A / Kept）
 - `[x]` 已勾選的 checkbox
+
+**來源判斷：**
+- `[Codex]` = Codex review pass 產生的 issue
+- `[Gemini]` = Gemini Code Assist integration 產生的 issue
+- 無來源 prefix 的 issue 視為 Claude issue（相容既有 comment）
 
 ### 步驟 3：逐一處理每個項目（最重要！）
 
@@ -195,12 +201,28 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
    - 更新各項目的狀態指標
    - 更新 Summary 表格的計數
    - 更新 metadata 中的 `updated_at` 和 issues 計數
+   - 寫入前用 shared helper 正規化 metadata：
+     ```bash
+     METADATA_JSON=$(printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer pr-review-resolver)
+     ```
+   - 更新 metadata JSON 後，用 shared helper 寫回 hidden block，避免改動 issue sections：
+     ```bash
+     UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
+     ```
+   - 保留 `review_sources`、`[Codex]` issues、`[Gemini]` issues，以及無 prefix 的 Claude issues
+   - 保持既有 `review_round` 不變（resolver 只更新狀態，不是 review producer）
    - 將 Status 更新為適當狀態
 
 2. 透過 `--stdin` 將更新內容直接寫入本地快取並同步至 GitHub：
 
 ```bash
-echo "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' ".pr-review-cache/pr-${PR_NUMBER}.json" 2>/dev/null || echo "")
+
+if [ -n "$EXPECTED_CONTENT_HASH" ]; then
+  printf '%s\n' "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"
+else
+  printf '%s\n' "$UPDATED_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+fi
 ```
 
 腳本會自動：
@@ -213,6 +235,7 @@ Exit codes：
 - `0` = 成功（本地快取 + GitHub 都已更新）
 - `1` = GitHub 同步失敗（本地快取是最新的，可用 `/push-review-cache` 重試）
 - `2` = 本地錯誤（如找不到 PR、內容為空）
+- `4` = cache hash mismatch，代表其他 tool 已更新 comment；重新讀取最新 comment，合併 resolver 狀態更新後重試一次
 
 3. 若同步失敗，通知使用者：
    - 本地快取已安全保存（`.pr-review-cache/pr-${PR_NUMBER}.json`）

@@ -2,8 +2,8 @@
 # Write PR review comment with local cache support
 # Updates local cache and optionally syncs to GitHub
 #
-# Usage: ./cache-write-comment.sh <CONTENT_FILE> [PR_NUMBER] [--local-only]
-#        ./cache-write-comment.sh --stdin [PR_NUMBER] [--local-only]
+# Usage: ./cache-write-comment.sh <CONTENT_FILE> [PR_NUMBER] [--local-only] [--expected-content-hash HASH]
+#        ./cache-write-comment.sh --stdin [PR_NUMBER] [--local-only] [--expected-content-hash HASH]
 #        ./cache-write-comment.sh --sync-from-cache [PR_NUMBER] [--force]
 # - CONTENT_FILE: Path to file containing the review content (markdown)
 # - --stdin: Read content from stdin instead of a file
@@ -11,9 +11,11 @@
 # - --local-only: Only update local cache, don't sync to GitHub
 # - --sync-from-cache: Re-sync existing local cache to GitHub (recovery mode)
 # - --force: Skip freshness check (use with --sync-from-cache)
+# - --expected-content-hash: Abort if the local cache hash changed before writing
 #
 # Exit codes: 0=success, 1=github sync failed (local cache is up-to-date),
-#             2=local error, 3=remote is newer (use --force to override)
+#             2=local error, 3=remote is newer (use --force to override),
+#             4=content hash mismatch (stale read-modify-write)
 
 set -euo pipefail
 
@@ -31,8 +33,10 @@ LOCAL_ONLY=false
 SYNC_FROM_CACHE=false
 READ_STDIN=false
 FORCE=false
+EXPECTED_CONTENT_HASH=""
 
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+  arg="$1"
   case "$arg" in
     --local-only)
       LOCAL_ONLY=true
@@ -46,6 +50,17 @@ for arg in "$@"; do
     --force)
       FORCE=true
       ;;
+    --expected-content-hash)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "Error: --expected-content-hash requires a value" >&2
+        exit 2
+      fi
+      EXPECTED_CONTENT_HASH="$1"
+      ;;
+    --expected-content-hash=*)
+      EXPECTED_CONTENT_HASH="${arg#*=}"
+      ;;
     *)
       if [ -z "$CONTENT_FILE" ]; then
         CONTENT_FILE="$arg"
@@ -54,6 +69,7 @@ for arg in "$@"; do
       fi
       ;;
   esac
+  shift
 done
 
 # --stdin mode: read content from stdin into a variable
@@ -142,8 +158,8 @@ elif [ "$READ_STDIN" = false ]; then
   # File mode — need a CONTENT_FILE
   if [ -z "$CONTENT_FILE" ]; then
     echo "Error: Content file path required" >&2
-    echo "Usage: $0 <CONTENT_FILE> [PR_NUMBER] [--local-only]" >&2
-    echo "       $0 --stdin [PR_NUMBER] [--local-only]" >&2
+    echo "Usage: $0 <CONTENT_FILE> [PR_NUMBER] [--local-only] [--expected-content-hash HASH]" >&2
+    echo "       $0 --stdin [PR_NUMBER] [--local-only] [--expected-content-hash HASH]" >&2
     echo "       $0 --sync-from-cache [PR_NUMBER]" >&2
     exit 2
   fi
@@ -170,6 +186,27 @@ CACHE_FILE="${CACHE_DIR}/pr-${PR_NUMBER}.json"
 
 # Write local cache (skip in --sync-from-cache mode, cache is already up-to-date)
 if [ "$SYNC_FROM_CACHE" = false ]; then
+  if [ -n "$EXPECTED_CONTENT_HASH" ]; then
+    CURRENT_CONTENT_HASH=""
+    if [ -f "$CACHE_FILE" ]; then
+      CURRENT_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
+    fi
+
+    if [ "$CURRENT_CONTENT_HASH" != "$EXPECTED_CONTENT_HASH" ]; then
+      echo "========================================" >&2
+      echo "Aborted: local cache content hash changed before write." >&2
+      echo "" >&2
+      echo "  Expected: $EXPECTED_CONTENT_HASH" >&2
+      echo "  Current:  ${CURRENT_CONTENT_HASH:-<no cache>}" >&2
+      echo "" >&2
+      echo "Re-read the PR review comment, merge your update, and retry." >&2
+      echo "========================================" >&2
+      exit 4
+    fi
+
+    echo "Content hash check passed: $EXPECTED_CONTENT_HASH" >&2
+  fi
+
   # Get existing cache metadata or fetch fresh
   COMMENT_ID=""
   if [ -f "$CACHE_FILE" ]; then

@@ -38,6 +38,8 @@ This uses the local cache if available, falling back to GitHub API on cache miss
 If content is returned:
 - Extract metadata from `<!-- pr-review-metadata ... -->` block
 - Note the current `review_round` and issues status
+- Read `.pr-review-cache/pr-${PR_NUMBER}.json` and save `.content_hash` as `EXPECTED_CONTENT_HASH`
+- Preserve any existing `[Gemini]` and `[Codex]` issues and `review_sources` metadata when writing the next review
 
 ### Step 3: Execute PR Review
 
@@ -65,6 +67,20 @@ Structure the review as a PR comment with hidden metadata and collapsible sectio
 
 **Character Limit:** Keep total content under ~40K characters (GitHub limit is 65,536).
 
+**Multi-source compatibility:** If an existing review comment is present, do not blindly regenerate the whole comment. Merge the new Claude findings into the existing structure:
+- Upgrade metadata to schema `1.1` before writing. Prefer the shared helper:
+  ```bash
+  METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer pr-review-and-document)
+  ```
+- After editing metadata JSON, replace the hidden block with the shared helper:
+  ```bash
+  UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
+  ```
+- Preserve `review_sources.gemini`, `review_sources.codex`, `[Gemini]` issues, and `[Codex]` issues
+- Preserve existing issue statuses (`✅`, `⏭️`, `⚠️`, `🔴`) unless the new Claude review proves they changed
+- Treat untagged issues as Claude issues
+- Increment PR-global `review_round` only when this review adds new findings; empty refreshes only update `review_sources.claude.last_reviewed_*`
+
 #### Metadata Block Format
 
 The metadata block uses HTML comment syntax with a specific marker for identification:
@@ -79,7 +95,9 @@ The metadata block uses HTML comment syntax with a specific marker for identific
 ```markdown
 <!-- pr-review-metadata
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
   "skill": "pr-review-and-document",
   "review_round": 1,
   "created_at": "YYYY-MM-DDTHH:MM:SSZ",
@@ -91,7 +109,23 @@ The metadata block uses HTML comment syntax with a specific marker for identific
     "important": { "total": 0, "fixed": 0 },
     "suggestions": { "total": 0, "fixed": 0 }
   },
-  "agents_run": ["code-reviewer", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "code-simplifier", "comment-analyzer"]
+  "agents_run": ["code-reviewer", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "code-simplifier", "comment-analyzer"],
+  "review_sources": {
+    "claude": {
+      "last_reviewed_head": "HEAD_SHA",
+      "last_reviewed_at": "YYYY-MM-DDTHH:MM:SSZ",
+      "agents_run": ["code-reviewer", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "code-simplifier", "comment-analyzer"]
+    },
+    "gemini": {
+      "consumed_comment_ids": [],
+      "last_integrated_at": null
+    },
+    "codex": {
+      "last_reviewed_head": null,
+      "last_reviewed_at": null,
+      "posted_finding_ids": []
+    }
+  }
 }
 -->
 
@@ -99,7 +133,7 @@ The metadata block uses HTML comment syntax with a specific marker for identific
 
 **Branch:** `branch-name` → `base-branch`
 **Round:** N | **Updated:** YYYY-MM-DD
-**Reviewer:** claude-opus-4-5 via pr-review-toolkit
+**Reviewer Sources:** Claude
 
 ---
 
@@ -196,13 +230,18 @@ The metadata block uses HTML comment syntax with a specific marker for identific
 Pipe the formatted content directly to `cache-write-comment.sh` via `--stdin`:
 
 ```bash
-echo "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+if [ -n "${EXPECTED_CONTENT_HASH:-}" ]; then
+  printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"
+else
+  printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh --stdin "$PR_NUMBER"
+fi
 ```
 
 The script will:
 - Update local cache (`.pr-review-cache/pr-{N}.json`)
 - Sync to GitHub via `upsert-review-comment.sh --stdin`（stdin pipe，不使用 temp file）
 - Return the comment URL
+- Exit `4` if another tool updated the cache after this skill read it; re-read, merge your changes into the newer comment, and retry once
 
 ### Step 6: Verify
 
@@ -223,12 +262,28 @@ Use consistent status indicators:
 
 When updating an existing review:
 
-1. Increment `review_round` in metadata
+1. Increment `review_round` only when adding new review findings
 2. Update `updated_at` timestamp
 3. Update issue counts and statuses
-4. Keep the same comment (GitHub tracks edit history)
+4. Preserve `review_sources` metadata and existing non-Claude issue sections
+5. Keep the same comment (GitHub tracks edit history)
 
 Previous review content is preserved in GitHub's "edited" dropdown, providing full audit trail.
+
+## Metadata Migration
+
+When reading older `schema_version: "1.0"` metadata, upgrade in memory before writing:
+
+| 1.0 field | 1.1 field |
+|---|---|
+| `skill` | `created_by` if missing, `skill` legacy field, and current `last_writer` |
+| `agents_run` | `review_sources.claude.agents_run` and top-level `agents_run` during compatibility window |
+| `gemini_integrated_ids` | `review_sources.gemini.consumed_comment_ids` |
+| `gemini_integration_date` | `review_sources.gemini.last_integrated_at` |
+
+Do not downgrade. New writes should use comment metadata schema `1.1`; the cache envelope remains `schema_version: "1.0"`.
+
+Use `${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh` for this migration when possible, then use `${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh` to merge the returned JSON back into the `<!-- pr-review-metadata ... -->` block without touching issue sections.
 
 ## Integration Notes
 
