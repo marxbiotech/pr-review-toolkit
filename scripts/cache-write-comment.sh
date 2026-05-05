@@ -13,7 +13,8 @@
 # - --force: Skip freshness check (use with --sync-from-cache)
 # - --expected-content-hash: Abort if the local cache hash changed before writing
 #
-# Exit codes: 0=success, 1=github sync failed (local cache is up-to-date),
+# Exit codes: 0=success, 1=github sync failed (local cache is up-to-date)
+#                            OR post-sync cache repair failed (stale_source_id flag set),
 #             2=local error, 3=remote is newer (use --force to override),
 #             4=content hash mismatch (stale read-modify-write)
 
@@ -25,6 +26,19 @@ source "$SCRIPT_DIR/lib/common.sh"
 CACHE_DIR=".pr-review-cache"
 MAX_RETRIES=3
 RETRY_INTERVAL=3
+
+# Validate --expected-content-hash value: must be non-empty and sha256:64-hex format
+validate_expected_content_hash() {
+  local val="$1"
+  if [ -z "$val" ]; then
+    echo "Error: --expected-content-hash requires a non-empty value" >&2
+    exit 2
+  fi
+  if ! [[ "$val" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "Error: --expected-content-hash must be 'sha256:' followed by 64 hex chars, got: $val" >&2
+    exit 2
+  fi
+}
 
 # Parse arguments
 CONTENT_FILE=""
@@ -57,9 +71,11 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       EXPECTED_CONTENT_HASH="$1"
+      validate_expected_content_hash "$EXPECTED_CONTENT_HASH"
       ;;
     --expected-content-hash=*)
       EXPECTED_CONTENT_HASH="${arg#*=}"
+      validate_expected_content_hash "$EXPECTED_CONTENT_HASH"
       ;;
     *)
       if [ -z "$CONTENT_FILE" ]; then
@@ -131,6 +147,23 @@ if [ "$SYNC_FROM_CACHE" = true ]; then
         LOCAL_EPOCH=$(parse_iso_timestamp "$LOCAL_CACHED_AT")
         REMOTE_EPOCH=$(parse_iso_timestamp "$REMOTE_UPDATED_AT")
 
+        # Validate both epochs are non-empty integers; an empty/non-numeric value
+        # from parse_iso_timestamp would silently make the -gt comparison false,
+        # bypassing the freshness check.
+        if ! [[ "$LOCAL_EPOCH" =~ ^[0-9]+$ ]] || ! [[ "$REMOTE_EPOCH" =~ ^[0-9]+$ ]]; then
+          echo "========================================" >&2
+          echo "Aborted: could not parse one or both timestamps for freshness check." >&2
+          echo "" >&2
+          echo "  Local cached_at:   $LOCAL_CACHED_AT (parsed: ${LOCAL_EPOCH:-<empty>})" >&2
+          echo "  Remote updated_at: $REMOTE_UPDATED_AT (parsed: ${REMOTE_EPOCH:-<empty>})" >&2
+          echo "" >&2
+          echo "Refusing to push without a verifiable freshness check." >&2
+          echo "If you have manually verified local is newer, retry with --force:" >&2
+          echo "  $0 --sync-from-cache $PR_NUMBER --force" >&2
+          echo "========================================" >&2
+          exit 3
+        fi
+
         if [ "$REMOTE_EPOCH" -gt "$LOCAL_EPOCH" ]; then
           echo "========================================" >&2
           echo "Aborted: remote comment is NEWER than local cache." >&2
@@ -182,6 +215,21 @@ if [ -z "$PR_NUMBER" ]; then
   exit 2
 fi
 
+# Producer-side sanity: content must contain exactly one '<!-- pr-review-metadata' marker.
+# 0 markers -> not a review comment (refuse to poison the cache).
+# >1 markers -> downstream replace/upgrade scripts will refuse to handle a multi-block payload,
+#   so refuse here at the producer instead of writing a poison pill.
+# Note: `|| true` because `grep -c` returns 1 on zero matches under `set -euo pipefail`.
+META_COUNT=$(printf '%s\n' "$CONTENT" | grep -c '^<!-- pr-review-metadata' || true)
+if [ "$META_COUNT" -eq 0 ]; then
+  echo "Error: content does not contain '<!-- pr-review-metadata' marker; refusing to write" >&2
+  exit 2
+fi
+if [ "$META_COUNT" -gt 1 ]; then
+  echo "Error: content contains $META_COUNT '<!-- pr-review-metadata' markers; expected exactly one. Refusing to write." >&2
+  exit 2
+fi
+
 CACHE_FILE="${CACHE_DIR}/pr-${PR_NUMBER}.json"
 
 # Write local cache (skip in --sync-from-cache mode, cache is already up-to-date)
@@ -214,7 +262,21 @@ if [ "$SYNC_FROM_CACHE" = false ]; then
   fi
 
   # Get PR metadata
-  PR_INFO=$(gh pr view "$PR_NUMBER" --json state,headRefName,baseRefName 2>/dev/null || echo '{}')
+  set +e
+  PR_INFO=$(gh pr view "$PR_NUMBER" --json state,headRefName,baseRefName 2>/tmp/gh-pr-view-err.$$)
+  gh_exit=$?
+  set -e
+
+  if [ "$gh_exit" -ne 0 ]; then
+    echo "Warning: gh pr view failed (exit $gh_exit); cache envelope metadata degraded to UNKNOWN/unknown/main." >&2
+    if [ -s /tmp/gh-pr-view-err.$$ ]; then
+      echo "  gh stderr:" >&2
+      sed 's/^/    /' /tmp/gh-pr-view-err.$$ >&2
+    fi
+    PR_INFO='{}'
+  fi
+  rm -f /tmp/gh-pr-view-err.$$
+
   PR_STATE=$(echo "$PR_INFO" | jq -r '.state // "UNKNOWN"')
   BRANCH=$(echo "$PR_INFO" | jq -r '.headRefName // "unknown"')
   BASE=$(echo "$PR_INFO" | jq -r '.baseRefName // "main"')
@@ -280,19 +342,54 @@ sync_to_github() {
       comment_url=$(echo "$output" | head -1)
       echo "$comment_url"
 
-      # Update comment ID in cache
-      local new_comment_id
-      if ! new_comment_id=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER"); then
-        echo "Warning: Could not retrieve comment ID for cache update: $new_comment_id" >&2
-        new_comment_id=""
-      fi
+      # Retry the post-sync comment-ID lookup. Without a real ID the cache
+      # keeps the bootstrap placeholder (0), and freshness checks in
+      # --sync-from-cache mode short-circuit on it — opening a silent
+      # overwrite window. Use the same retry budget as the upsert above.
+      local new_comment_id=""
+      local find_output
+      local lookup_attempt=1
+      while [ $lookup_attempt -le $MAX_RETRIES ]; do
+        if find_output=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER" 2>&1); then
+          if [ -n "$find_output" ] && [ "$find_output" != "0" ]; then
+            new_comment_id="$find_output"
+            break
+          fi
+        fi
+        if [ $lookup_attempt -lt $MAX_RETRIES ]; then
+          echo "Post-sync comment-ID lookup attempt $lookup_attempt/$MAX_RETRIES failed; retrying in ${RETRY_INTERVAL}s..." >&2
+          sleep "$RETRY_INTERVAL"
+        fi
+        lookup_attempt=$((lookup_attempt + 1))
+      done
+
       if [ -n "$new_comment_id" ] && [ "$new_comment_id" != "0" ]; then
         jq --argjson comment_id "$new_comment_id" '.source_comment_id = $comment_id' "$CACHE_FILE" > "${CACHE_FILE}.tmp"
         mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
+        echo "Successfully synced to GitHub" >&2
+        return 0
       fi
 
-      echo "Successfully synced to GitHub" >&2
-      return 0
+      # Retries exhausted — GitHub upsert succeeded, but we couldn't repair
+      # the cache's source_comment_id. Mark the envelope stale so future
+      # freshness checks can refuse to silently overwrite remote changes.
+      jq --argjson stale true '.stale_source_id = $stale' "$CACHE_FILE" > "${CACHE_FILE}.tmp" \
+        && mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
+
+      echo "" >&2
+      echo "========================================" >&2
+      echo "GitHub sync succeeded, but post-sync cache repair failed." >&2
+      echo "" >&2
+      echo "  Failed step: find-review-comment.sh after $MAX_RETRIES attempts" >&2
+      echo "  Stale state: source_comment_id remains the bootstrap placeholder;" >&2
+      echo "               freshness checks will be skipped on this cache." >&2
+      echo "  Envelope flag set: stale_source_id=true" >&2
+      echo "" >&2
+      echo "To recover, run:" >&2
+      echo "  scripts/cache-sync.sh \"$PR_NUMBER\" --force-refresh" >&2
+      echo "  (repopulates the cache from GitHub)" >&2
+      echo "========================================" >&2
+      return 1
     fi
 
     echo "Attempt $attempt failed: $output" >&2

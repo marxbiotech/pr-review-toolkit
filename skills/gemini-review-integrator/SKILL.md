@@ -112,9 +112,27 @@ Key formatting rules:
      ```bash
      UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
      ```
-   - Add consumed GitHub comment IDs to `review_sources.gemini.consumed_comment_ids`
-   - Preserve legacy `gemini_integrated_ids` during the compatibility window
-   - Set `review_sources.gemini.last_integrated_at`
+   - Mirror new consumed Gemini comment IDs into BOTH `review_sources.gemini.consumed_comment_ids` AND legacy `gemini_integrated_ids` (Phase 2 compatibility window)
+   - Mirror the integration timestamp into BOTH `review_sources.gemini.last_integrated_at` AND legacy `gemini_integration_date`
+   - Once Phase 2 ships, the legacy fields will be removed in a future release; until then, every write keeps both fields in sync so a Phase-1 reader still sees up-to-date IDs. The shared `review-metadata-upgrade.sh` helper only preserves *existing* legacy fields — it never back-fills new IDs — so this skill MUST perform the dual-write itself.
+
+     Apply the dual-write atomically with `jq`:
+
+     ```bash
+     # Dual-write new Gemini IDs + integration timestamp during Phase 2 compat window.
+     # Both nested (1.1 canonical) and top-level (1.0 legacy) are kept in sync until
+     # the legacy fields are removed in a future release.
+     METADATA_JSON=$(printf '%s' "$METADATA_JSON" | jq \
+       --argjson new_ids "$NEW_INTEGRATED_IDS" \
+       --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+         .review_sources.gemini.consumed_comment_ids = ((.review_sources.gemini.consumed_comment_ids // []) + $new_ids | unique)
+       | .review_sources.gemini.last_integrated_at = $now
+       | .gemini_integrated_ids = ((.gemini_integrated_ids // []) + $new_ids | unique)
+       | .gemini_integration_date = $now
+     ')
+     ```
+
+     `$NEW_INTEGRATED_IDS` must be a JSON array of the integer comment IDs newly consumed in this run (e.g. `[2726014213, 2726014217]`).
    - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues
    - Increment issue counts in `issues` object
    - Update `updated_at` timestamp

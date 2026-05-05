@@ -60,7 +60,8 @@ if ! jq empty "$METADATA_FILE" >/dev/null 2>&1; then
 fi
 
 FORMATTED_METADATA_FILE=$(mktemp)
-trap 'rm -f "$FORMATTED_METADATA_FILE"' EXIT
+OUTPUT_FILE=$(mktemp)
+trap 'rm -f "$FORMATTED_METADATA_FILE" "$OUTPUT_FILE"' EXIT
 jq . "$METADATA_FILE" > "$FORMATTED_METADATA_FILE"
 
 if [ "$READ_STDIN" = true ]; then
@@ -82,6 +83,8 @@ if [ -z "$COMMENT_CONTENT" ]; then
   exit 2
 fi
 
+# Buffer awk's stdout so partial output never reaches the caller on error paths.
+set +e
 printf '%s\n' "$COMMENT_CONTENT" | awk -v metadata_file="$FORMATTED_METADATA_FILE" '
   /^<!-- pr-review-metadata/ {
     if (replaced) {
@@ -118,4 +121,12 @@ printf '%s\n' "$COMMENT_CONTENT" | awk -v metadata_file="$FORMATTED_METADATA_FIL
       exit 3
     }
   }
-'
+' > "$OUTPUT_FILE"
+awk_status=$?
+set -e
+
+if [ "$awk_status" -ne 0 ]; then
+  exit "$awk_status"
+fi
+
+cat "$OUTPUT_FILE"

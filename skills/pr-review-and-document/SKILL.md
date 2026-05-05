@@ -262,11 +262,11 @@ Use consistent status indicators:
 
 When updating an existing review:
 
-1. Increment `review_round` only when adding new review findings
-2. Update `updated_at` timestamp
-3. Update issue counts and statuses
-4. Preserve `review_sources` metadata and existing non-Claude issue sections
-5. Keep the same comment (GitHub tracks edit history)
+1. Update `review_round` and timestamps based on whether this round adds new findings:
+   - **New findings present:** increment `review_round`, update `updated_at`, update issue counts and statuses.
+   - **Empty refresh (no new findings):** keep `review_round` unchanged; update only `review_sources.claude.last_reviewed_head` and `review_sources.claude.last_reviewed_at`. Do not modify existing issue statuses or counts.
+2. Preserve `review_sources` metadata and existing non-Claude issue sections.
+3. Keep the same comment (GitHub tracks edit history).
 
 Previous review content is preserved in GitHub's "edited" dropdown, providing full audit trail.
 

@@ -30,15 +30,25 @@ Use only these scripts for review state:
 ## Workflow
 
 1. Get the PR number with `get-pr-number.sh`.
-2. Read `.pr-review-cache/pr-${PR_NUMBER}.json` if present and save `.content_hash` as `EXPECTED_CONTENT_HASH`.
-3. Call `cache-read-comment.sh "$PR_NUMBER"` using a `set +e` / exit-code capture pattern:
-   - exit `0`: append mode
-   - exit `2`: bootstrap mode
-   - anything else: stop and report the error
+2. Call `cache-read-comment.sh "$PR_NUMBER"` using the bounded `set +e` / exit-code capture idiom below. Do NOT collapse the exit codes with `|| true` — exit `1` (real error) and exit `2` (bootstrap) must be handled distinctly.
+
+   ```bash
+   set +e
+   REVIEW_CONTENT=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh" "$PR_NUMBER")
+   rc=$?
+   set -e
+
+   case $rc in
+     0) MODE=append ;;       # cache populated; proceed to step 3 to capture .content_hash
+     2) MODE=bootstrap ;;    # no canonical comment exists; skip step 3 entirely
+     *) echo "cache-read-comment.sh failed with exit $rc" >&2; exit "$rc" ;;
+   esac
+   ```
+3. Only in append mode: read `.pr-review-cache/pr-${PR_NUMBER}.json` and save `.content_hash` as `EXPECTED_CONTENT_HASH`. (Bootstrap mode skips this step entirely.)
 4. Review the PR diff and current working tree. Focus on correctness, test gaps, cross-file consistency, error handling, and simplification after fixes.
 5. Produce only actionable findings that are not already present in the comment.
 6. Write the updated comment through `cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"` when an expected hash exists. If there was no cache before bootstrap, omit the expected hash.
-7. If the script exits `4`, re-read the comment, merge your update into the newer content, and retry once.
+7. If the script exits `4`, re-read the comment, merge your update into the newer content, and retry once. If the retry also exits `4`, stop and report `CAS conflict: another writer holds the lock` along with the current `content_hash` for the dev agent to investigate. Do not retry beyond the second attempt.
 
 ## Metadata Rules
 
@@ -50,6 +60,8 @@ Use comment metadata schema `1.1` inside `<!-- pr-review-metadata ... -->`. Do n
 - `review_sources.codex.last_reviewed_head`: current HEAD SHA
 - `review_sources.codex.last_reviewed_at`: UTC timestamp
 - `review_sources.codex.posted_finding_ids`: stable Codex finding IDs
+- `review_sources.claude.agents_run`: empty array `[]` on Codex bootstrap (no Claude agents ran)
+- top-level `agents_run`: dual-write mirror of `review_sources.claude.agents_run` for Phase-2 backward compat — set to `[]` on Codex bootstrap. Will be removed in a future release.
 
 Upgrade older metadata before writing with:
 

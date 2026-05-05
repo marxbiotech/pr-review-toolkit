@@ -61,6 +61,12 @@ if [ -z "$COMMENT_CONTENT" ]; then
   exit 2
 fi
 
+META_COUNT=$(printf '%s\n' "$COMMENT_CONTENT" | grep -c '^<!-- pr-review-metadata' || true)
+if [ "$META_COUNT" -gt 1 ]; then
+  echo "Error: multiple pr-review metadata blocks found" >&2
+  exit 4
+fi
+
 METADATA=$(printf '%s\n' "$COMMENT_CONTENT" | awk '
   /^<!-- pr-review-metadata/ { in_meta=1; next }
   in_meta && /^-->$/ { in_meta=0; found=1; exit }
@@ -78,6 +84,12 @@ if ! printf '%s\n' "$METADATA" | jq empty >/dev/null 2>&1; then
   exit 3
 fi
 
+META_TYPE=$(printf '%s\n' "$METADATA" | jq -r 'type')
+if [ "$META_TYPE" != "object" ]; then
+  echo "Error: pr-review metadata must be a JSON object, got $META_TYPE" >&2
+  exit 3
+fi
+
 jq --arg last_writer "$LAST_WRITER" '
   def arr(x): if x == null then [] elif (x | type) == "array" then x else [x] end;
 
@@ -89,7 +101,7 @@ jq --arg last_writer "$LAST_WRITER" '
   | .schema_version = "1.1"
   | .created_by = (.created_by // .skill // (if $last_writer != "" then $last_writer else "unknown" end))
   | .last_writer = (if $last_writer != "" then $last_writer else (.last_writer // .skill // .created_by // "unknown") end)
-  | .skill = (.skill // .last_writer)
+  | .skill = .last_writer
   | .review_sources = {
       claude: {
         last_reviewed_head: ($claude.last_reviewed_head // null),
@@ -106,8 +118,5 @@ jq --arg last_writer "$LAST_WRITER" '
         posted_finding_ids: arr($codex.posted_finding_ids)
       }
     }
-  | if (.agents_run? == null and (.review_sources.claude.agents_run | length) > 0)
-    then .agents_run = .review_sources.claude.agents_run
-    else .
-    end
+  | .agents_run = .review_sources.claude.agents_run
 ' <<< "$METADATA"
