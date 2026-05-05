@@ -4,6 +4,10 @@
 
 This repository is a Claude Code plugin for PR review workflows. Plugin metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; keep their plugin version fields in sync. Skills are stored in `skills/<skill-name>/SKILL.md`, with supporting material under each skill's `references/` directory when needed. User-facing command docs live in `commands/`. Reusable shell utilities live in `scripts/`, with shared helpers in `scripts/lib/common.sh`. Workflow and release notes are documented in `docs/`, `README.md`, `CHANGELOG.md`, and `RELEASING.md`. GitHub Actions are in `.github/workflows/`.
 
+### Codex Skills
+
+Codex-facing skills live under `codex/skills/<skill-name>/SKILL.md`, parallel to the Claude `skills/` tree. They target Codex's skill runtime and resolve their toolkit root via the `${PR_REVIEW_TOOLKIT_ROOT}` environment variable rather than `${CLAUDE_PLUGIN_ROOT}`, and they reuse the helper scripts under `scripts/` instead of duplicating cache logic. Currently shipped: `codex-review-pass` (review producer with bootstrap and append modes) and `codex-fix-worker` (bounded per-issue fix skill invoked by the dev agent). Codex marketplace packaging is not yet finalized; until then, install locally by copying or symlinking the `codex/skills/<skill-name>/` directory into your Codex skills location. See `README.md` for the current install steps and `docs/codex-integration-design.md` for the contract.
+
 ## Build, Test, and Development Commands
 
 There is no compile step; this project is Markdown, JSON, and Bash.

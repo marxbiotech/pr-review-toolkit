@@ -72,6 +72,15 @@ METADATA_JSON=$(printf '%s\n' "$REVIEW_CONTENT" | "${PR_REVIEW_TOOLKIT_ROOT}/scr
 After editing metadata JSON, replace the hidden block without touching issue sections:
 
 ```bash
+# Set up a temp file for the modified metadata JSON.
+# (If this code block already declares its own trap, extend it instead of adding a second line.)
+METADATA_FILE=$(mktemp)
+trap 'rm -f "$METADATA_FILE"' EXIT
+
+# Write the edited metadata JSON to the temp file.
+printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+# Replace the metadata block in the comment.
 UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh" --stdin --metadata-file "$METADATA_FILE")
 ```
 
@@ -112,6 +121,25 @@ If a duplicate slips through, mark it as duplicate only when the dev agent asks;
 When no canonical comment exists, create the initial PR review comment with the standard `<!-- pr-review-metadata` marker, summary table, Critical Issues, Important Issues, Suggestions, Strengths, and Action Plan sections. Publish through `cache-write-comment.sh --stdin`.
 
 Bootstrap must not run concurrently with another producer. If duplicate canonical comments are detected, stop and ask the dev agent to keep only the `.pr-review-cache/pr-#.json` `source_comment_id` comment.
+
+## Canonical Taxonomy
+
+Actionable findings (anything labelled "Severity: Important", "before-merge",
+🔴 Critical, 🟡 Important, or 💡 Suggestion) MUST be appended into the existing
+canonical sections — `### 🔴 Critical Issues`, `### 🟡 Important Issues`, or
+`### 💡 Suggestions` — and counted in the Summary table by incrementing
+`issues.{critical|important|suggestions}.total`. Renumber existing items in the
+section so the new findings sit at the end with the next sequential numbers.
+
+A separate `### 🟠 Codex Follow-up Notes` block is allowed ONLY for non-canonical
+content that does not change merge status: validation-run confirmations,
+environmental observations, design rationale, or audit trails. Anything that
+needs to be acted on before merge is by definition canonical.
+
+This rule prevents the Summary table from drifting out of sync with the actual
+PR review state and lets `pr-review-resolver` discover all unresolved items
+through the canonical `⚠️` / `🔴` markers in the Critical / Important /
+Suggestions sections.
 
 ## Append Mode
 

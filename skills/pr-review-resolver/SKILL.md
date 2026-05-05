@@ -205,8 +205,17 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
      ```bash
      METADATA_JSON=$(printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer pr-review-resolver)
      ```
-   - 更新 metadata JSON 後，用 shared helper 寫回 hidden block，避免改動 issue sections：
+   - 更新 metadata JSON 後（例如透過 `jq` 編輯 `$METADATA_JSON`），用 shared helper 寫回 hidden block，避免改動 issue sections：
      ```bash
+     # 為修改後的 metadata JSON 建立暫存檔。
+     # （若此 code block 已有自己的 trap，請擴充既有 trap 而非新增一行。）
+     METADATA_FILE=$(mktemp)
+     trap 'rm -f "$METADATA_FILE"' EXIT
+
+     # 將編輯後的 metadata JSON 寫入暫存檔。
+     printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+     # 替換 comment 中的 metadata block。
      UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
      ```
    - 保留 `review_sources`、`[Codex]` issues、`[Gemini]` issues，以及無 prefix 的 Claude issues

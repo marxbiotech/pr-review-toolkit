@@ -276,5 +276,119 @@ HASH_AFTER_6C=$(jq -r '.content_hash' "$CACHE_FILE")
 assert_eq "case6c cache.content_hash unchanged" "$HASH_BEFORE_6C" "$HASH_AFTER_6C"
 echo "PASS [case6c] 2 markers -> exit 2, cache untouched"
 
+# --- Case 7: post-sync cache repair must not truncate the cache -----------
+# Regression test for the CF-4 bug: when find-review-comment.sh prints
+# multi-line / non-numeric output (originally caused by a stray 2>&1 mixing
+# stderr "Using cached comment ID: ..." into stdout), the post-sync repair
+# step must reject the bogus value and refuse to truncate the cache file.
+#
+# Strategy: build an isolated "fake scripts/" tempdir containing
+#   - a copy of cache-write-comment.sh (the script under test),
+#   - a copy of lib/common.sh (a dependency),
+#   - stub find-review-comment.sh that emits the bug pattern,
+#   - stub upsert-review-comment.sh that "succeeds" without touching GitHub.
+# Then run the copied cache-write-comment.sh from that fake dir so its
+# computed SCRIPT_DIR resolves to the stubs.
+SRC_SCRIPTS_DIR="$(dirname "$SCRIPT")"
+FAKE_SCRIPTS_DIR="$WORKDIR/fake-scripts"
+mkdir -p "$FAKE_SCRIPTS_DIR/lib"
+cp "$SRC_SCRIPTS_DIR/cache-write-comment.sh" "$FAKE_SCRIPTS_DIR/cache-write-comment.sh"
+cp "$SRC_SCRIPTS_DIR/lib/common.sh" "$FAKE_SCRIPTS_DIR/lib/common.sh"
+chmod +x "$FAKE_SCRIPTS_DIR/cache-write-comment.sh"
+
+# Stub upsert-review-comment.sh: pretend the GitHub upsert succeeded by
+# printing a fake comment URL on stdout and exiting 0. Drains stdin so the
+# producer's `echo "$CONTENT" | upsert ...` does not SIGPIPE.
+cat > "$FAKE_SCRIPTS_DIR/upsert-review-comment.sh" <<'STUB'
+#!/bin/bash
+cat >/dev/null
+echo "https://github.com/example/repo/issues/0#issuecomment-999"
+exit 0
+STUB
+chmod +x "$FAKE_SCRIPTS_DIR/upsert-review-comment.sh"
+
+# Stub find-review-comment.sh: emit the exact bug pattern — the legacy
+# stderr info line concatenated with the numeric ID, both on stdout. With
+# the fix (no 2>&1 + strict numeric validation), find_output captures only
+# the second line via the normal find script path; here we deliberately
+# simulate the worst case where stdout itself is multi-line garbage to
+# prove the producer's regex rejects it.
+cat > "$FAKE_SCRIPTS_DIR/find-review-comment.sh" <<'STUB'
+#!/bin/bash
+printf 'Using cached comment ID: 999\n999\n'
+exit 0
+STUB
+chmod +x "$FAKE_SCRIPTS_DIR/find-review-comment.sh"
+
+# Speed up the test: shrink retry budget + interval so we don't sleep ~9s.
+# (MAX_RETRIES and RETRY_INTERVAL are set near the top of the script.)
+sed -i.bak \
+  -e 's/^MAX_RETRIES=.*/MAX_RETRIES=1/' \
+  -e 's/^RETRY_INTERVAL=.*/RETRY_INTERVAL=0/' \
+  "$FAKE_SCRIPTS_DIR/cache-write-comment.sh"
+rm -f "$FAKE_SCRIPTS_DIR/cache-write-comment.sh.bak"
+
+# Seed a non-empty cache so we can compare its size before/after.
+rm -f "$CACHE_FILE"
+CASE7_CONTENT="${MARKER}
+case7 cache content that must survive a failed post-sync repair"
+seed_cache "$CASE7_CONTENT"
+SIZE_BEFORE=$(wc -c < "$CACHE_FILE" | tr -d ' ')
+HASH_BEFORE_7=$(jq -r '.content_hash' "$CACHE_FILE")
+if [ "$SIZE_BEFORE" = "0" ]; then
+  echo "FAIL [case7 setup]: seeded cache should not be 0 bytes" >&2
+  exit 1
+fi
+
+# Invoke the *copied* script (not $SCRIPT) so SCRIPT_DIR points at the
+# stubs. Run without --local-only so sync_to_github() actually executes.
+# Keep --expected-content-hash off; CONTENT matches the seeded cache so
+# the local-cache write succeeds and the run reaches the GitHub sync path.
+set +e
+printf '%s' "$CASE7_CONTENT" | "$FAKE_SCRIPTS_DIR/cache-write-comment.sh" --stdin "$PR" \
+  >"$WORKDIR/case7.out" 2>"$WORKDIR/case7.err"
+status=$?
+set -e
+
+# The producer should fall through to the stale-flag path: GitHub upsert
+# "succeeded" but the post-sync ID lookup returned non-numeric output and
+# was rejected. Documented exit code for that branch is 1.
+assert_eq "case7 exit (post-sync repair rejected)" "1" "$status"
+
+# CRITICAL ASSERTION: the cache file must not have been truncated.
+if [ ! -s "$CACHE_FILE" ]; then
+  echo "FAIL [case7]: cache file was truncated to 0 bytes (the regression!)" >&2
+  echo "  stderr:" >&2
+  sed 's/^/    /' "$WORKDIR/case7.err" >&2
+  exit 1
+fi
+
+SIZE_AFTER=$(wc -c < "$CACHE_FILE" | tr -d ' ')
+# The cache may have grown by a few bytes if the stale_source_id flag was
+# added; it must NEVER have shrunk and must still parse as JSON with the
+# original content_hash and content intact.
+if [ "$SIZE_AFTER" -lt "$SIZE_BEFORE" ]; then
+  echo "FAIL [case7]: cache size shrank from $SIZE_BEFORE to $SIZE_AFTER bytes" >&2
+  exit 1
+fi
+
+if ! jq -e . "$CACHE_FILE" >/dev/null 2>&1; then
+  echo "FAIL [case7]: cache file is no longer valid JSON" >&2
+  cat "$CACHE_FILE" >&2
+  exit 1
+fi
+
+HASH_AFTER_7=$(jq -r '.content_hash' "$CACHE_FILE")
+assert_eq "case7 cache.content_hash preserved" "$HASH_BEFORE_7" "$HASH_AFTER_7"
+CONTENT_AFTER_7=$(jq -r '.content' "$CACHE_FILE")
+assert_eq "case7 cache.content preserved" "$CASE7_CONTENT" "$CONTENT_AFTER_7"
+
+# Producer should have set the stale-flag escape hatch since the repair
+# could not be completed cleanly.
+STALE_FLAG=$(jq -r '.stale_source_id // false' "$CACHE_FILE")
+assert_eq "case7 cache.stale_source_id" "true" "$STALE_FLAG"
+
+echo "PASS [case7] post-sync repair on multi-line lookup output preserves cache"
+
 echo
 echo "All cache-write-comment CAS tests passed."

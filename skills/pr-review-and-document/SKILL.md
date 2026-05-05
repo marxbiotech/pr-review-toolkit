@@ -72,8 +72,17 @@ Structure the review as a PR comment with hidden metadata and collapsible sectio
   ```bash
   METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer pr-review-and-document)
   ```
-- After editing metadata JSON, replace the hidden block with the shared helper:
+- After editing metadata JSON (e.g. via `jq`), replace the hidden block with the shared helper:
   ```bash
+  # Set up a temp file for the modified metadata JSON.
+  # (If this code block already declares its own trap, extend it instead of adding a second line.)
+  METADATA_FILE=$(mktemp)
+  trap 'rm -f "$METADATA_FILE"' EXIT
+
+  # Write the edited metadata JSON to the temp file.
+  printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+  # Replace the metadata block in the comment.
   UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
   ```
 - Preserve `review_sources.gemini`, `review_sources.codex`, `[Gemini]` issues, and `[Codex]` issues

@@ -350,8 +350,15 @@ sync_to_github() {
       local find_output
       local lookup_attempt=1
       while [ $lookup_attempt -le $MAX_RETRIES ]; do
-        if find_output=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER" 2>&1); then
-          if [ -n "$find_output" ] && [ "$find_output" != "0" ]; then
+        # NOTE: do NOT redirect stderr to stdout here. find-review-comment.sh
+        # writes the comment ID to stdout and info messages (e.g.
+        # "Using cached comment ID: ...") to stderr; mixing them produces
+        # multi-line non-numeric input that downstream jq --argjson then
+        # rejects, which previously truncated the cache to 0 bytes.
+        if find_output=$("$SCRIPT_DIR/find-review-comment.sh" "$PR_NUMBER"); then
+          # Strict numeric validation: rejects empty, multi-line,
+          # non-numeric, and the bootstrap "0" placeholder in one check.
+          if [[ "$find_output" =~ ^[0-9]+$ ]] && [ "$find_output" != "0" ]; then
             new_comment_id="$find_output"
             break
           fi
@@ -363,18 +370,38 @@ sync_to_github() {
         lookup_attempt=$((lookup_attempt + 1))
       done
 
-      if [ -n "$new_comment_id" ] && [ "$new_comment_id" != "0" ]; then
-        jq --argjson comment_id "$new_comment_id" '.source_comment_id = $comment_id' "$CACHE_FILE" > "${CACHE_FILE}.tmp"
-        mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
-        echo "Successfully synced to GitHub" >&2
-        return 0
+      if [ -n "$new_comment_id" ] && [[ "$new_comment_id" =~ ^[0-9]+$ ]]; then
+        # Atomic repair: write to a unique mktemp path and only mv on jq
+        # success. A separate mktemp filename avoids collisions with
+        # ${CACHE_FILE}.tmp used elsewhere; chaining with && ensures mv
+        # never runs on a 0-byte tmp file when jq fails.
+        local repair_tmp
+        repair_tmp=$(mktemp "${CACHE_FILE}.repair.XXXXXX")
+        if jq --argjson comment_id "$new_comment_id" '.source_comment_id = $comment_id' "$CACHE_FILE" > "$repair_tmp" \
+           && mv "$repair_tmp" "$CACHE_FILE"; then
+          echo "Successfully synced to GitHub" >&2
+          return 0
+        else
+          rm -f "$repair_tmp"
+          echo "Warning: post-sync source_comment_id repair failed; cache not updated." >&2
+          # fall through to the stale-flag path below
+        fi
       fi
 
-      # Retries exhausted — GitHub upsert succeeded, but we couldn't repair
-      # the cache's source_comment_id. Mark the envelope stale so future
-      # freshness checks can refuse to silently overwrite remote changes.
-      jq --argjson stale true '.stale_source_id = $stale' "$CACHE_FILE" > "${CACHE_FILE}.tmp" \
-        && mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
+      # Retries exhausted (or the repair write failed) — GitHub upsert
+      # succeeded, but we couldn't repair the cache's source_comment_id.
+      # Mark the envelope stale so future freshness checks can refuse to
+      # silently overwrite remote changes. Use a unique mktemp path and
+      # chain with && so a failed jq here also cannot poison the cache.
+      local stale_tmp
+      stale_tmp=$(mktemp "${CACHE_FILE}.stale.XXXXXX")
+      if jq --argjson stale true '.stale_source_id = $stale' "$CACHE_FILE" > "$stale_tmp" \
+         && mv "$stale_tmp" "$CACHE_FILE"; then
+        :
+      else
+        rm -f "$stale_tmp"
+        echo "Warning: failed to set stale_source_id flag on cache." >&2
+      fi
 
       echo "" >&2
       echo "========================================" >&2

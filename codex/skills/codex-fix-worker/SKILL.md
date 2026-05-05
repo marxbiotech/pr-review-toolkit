@@ -54,7 +54,19 @@ If owned files or the user decision are missing, stop and ask for them. Do not d
    ```bash
    METADATA_JSON=$(printf '%s\n' "$REVIEW_CONTENT" | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh" --stdin --last-writer codex-fix-worker)
    ```
-   After editing metadata JSON, use `review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE"` to write it back without touching unrelated issue sections.
+   After editing metadata JSON (e.g. via `jq`), write it back without touching unrelated issue sections:
+   ```bash
+   # Set up a temp file for the modified metadata JSON.
+   # (If this code block already declares its own trap, extend it instead of adding a second line.)
+   METADATA_FILE=$(mktemp)
+   trap 'rm -f "$METADATA_FILE"' EXIT
+
+   # Write the edited metadata JSON to the temp file.
+   printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+   # Replace the metadata block in the comment.
+   UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh" --stdin --metadata-file "$METADATA_FILE")
+   ```
 5. Edit only the owned files. If another file must change, stop and report the required expansion to the dev agent.
 6. Run targeted validation such as tests, lint, `git diff --check`, or script syntax checks relevant to the changed files.
 7. Mark only the target issue as `✅`, add a concise fix summary and validation result, update summary counts, `updated_at`, and `last_writer`.

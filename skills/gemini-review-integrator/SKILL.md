@@ -108,8 +108,17 @@ Key formatting rules:
      ```bash
      METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-upgrade.sh --stdin --last-writer gemini-review-integrator)
      ```
-   - Replace the updated hidden metadata block with:
+   - Replace the updated hidden metadata block. Run this **after** all metadata edits (including the dual-write `jq` step below) have been applied to `$METADATA_JSON`:
      ```bash
+     # Set up a temp file for the modified metadata JSON.
+     # (If this code block already declares its own trap, extend it instead of adding a second line.)
+     METADATA_FILE=$(mktemp)
+     trap 'rm -f "$METADATA_FILE"' EXIT
+
+     # Write the fully-edited metadata JSON to the temp file.
+     printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+     # Replace the metadata block in the comment.
      UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
      ```
    - Mirror new consumed Gemini comment IDs into BOTH `review_sources.gemini.consumed_comment_ids` AND legacy `gemini_integrated_ids` (Phase 2 compatibility window)

@@ -56,6 +56,11 @@ This repository also includes Codex skill definitions under `codex/skills/`:
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
 | **codex-fix-worker** | Fix one selected PR review issue and update that issue's status |
 
+<!-- Design Decision: deliberate hand-wavy install instruction.
+     The Codex marketplace metadata format and canonical install location are not yet finalized,
+     so this README intentionally avoids prescribing a concrete path (e.g., ~/.codex/skills/) that
+     could become wrong as Codex packaging stabilizes. Once marketplace metadata is published,
+     replace the hand-wavy sentence below with explicit cp/ln commands and a target path. -->
 Until Codex marketplace metadata is finalized, install from source by making these skill directories available to Codex and setting the toolkit root:
 
 ```bash
