@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.claude-plugin/plugin.json'
+      - '.codex-plugin/plugin.json'
 
 jobs:
   release:
@@ -72,6 +73,8 @@ jobs:
           echo "/plugin marketplace add marxbiotech/pr-review-toolkit" >> release_notes.md
           echo "/plugin install pr-review-toolkit" >> release_notes.md
           echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "For Codex, this release includes a source plugin manifest at \`.codex-plugin/plugin.json\` with skills under \`codex/skills/\`." >> release_notes.md
 
           cat release_notes.md
 

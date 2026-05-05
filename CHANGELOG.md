@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-05
+
 ### Added
 
 - Add Codex skill scaffolding for `codex-review-pass` and `codex-fix-worker`
+- Add Codex plugin manifest at `.codex-plugin/plugin.json`
+- Add repo-scoped Codex marketplace metadata at `.agents/plugins/marketplace.json`
 - Add compare-and-swap protection to `cache-write-comment.sh --stdin` via `--expected-content-hash`
 - Add shared `review-metadata-upgrade.sh` helper with fixtures and tests for metadata migration
 - Add shared `review-metadata-replace.sh` helper with preservation tests for metadata block updates
@@ -18,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update PR review skills to preserve multi-source metadata and use cache hash checks when writing
+- Extend validation and release workflows to check Codex marketplace metadata, plugin packaging, skill frontmatter, and cross-manifest versions
 
 ## [1.4.1] - 2026-02-06
 
@@ -90,7 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.1...v2.0.0
+[1.4.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.3.1...v1.4.0
+[1.3.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.1.0...v1.2.0

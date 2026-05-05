@@ -41,15 +41,20 @@ jobs:
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
-      - name: Update plugin.json
+      - name: Update Claude plugin.json
         run: |
           jq '.version = "${{ steps.bump.outputs.new }}"' .claude-plugin/plugin.json > tmp.json
           mv tmp.json .claude-plugin/plugin.json
 
-      - name: Update marketplace.json
+      - name: Update Claude marketplace.json
         run: |
           jq '.plugins[0].version = "${{ steps.bump.outputs.new }}"' .claude-plugin/marketplace.json > tmp.json
           mv tmp.json .claude-plugin/marketplace.json
+
+      - name: Update Codex plugin.json
+        run: |
+          jq '.version = "${{ steps.bump.outputs.new }}"' .codex-plugin/plugin.json > tmp.json
+          mv tmp.json .codex-plugin/plugin.json
 
       - name: Update CHANGELOG.md
         run: |
@@ -86,7 +91,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new }}"
           git push
 

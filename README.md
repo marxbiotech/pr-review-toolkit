@@ -47,27 +47,46 @@ git clone https://github.com/marxbiotech/pr-review-toolkit.git
 claude --plugin-dir /path/to/pr-review-toolkit
 ```
 
-### Codex Skills (From Source)
+### Codex Plugin / Skills (From Source)
 
-This repository also includes Codex skill definitions under `codex/skills/`:
+This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin manifest at `.codex-plugin/plugin.json`, and Codex skill definitions under `codex/skills/`:
 
 | Skill | Description |
 |-------|-------------|
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
 | **codex-fix-worker** | Fix one selected PR review issue and update that issue's status |
 
-<!-- Design Decision: deliberate hand-wavy install instruction.
-     The Codex marketplace metadata format and canonical install location are not yet finalized,
-     so this README intentionally avoids prescribing a concrete path (e.g., ~/.codex/skills/) that
-     could become wrong as Codex packaging stabilizes. Once marketplace metadata is published,
-     replace the hand-wavy sentence below with explicit cp/ln commands and a target path. -->
-Until Codex marketplace metadata is finalized, install from source by making these skill directories available to Codex and setting the toolkit root:
+Until public Codex marketplace distribution is finalized, install from source by cloning the repository and adding it as a local marketplace. The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
+
+```bash
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
+cd pr-review-toolkit
+jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
+codex plugin marketplace add .
+```
+
+Set the toolkit root for Codex sessions that run these skills:
 
 ```bash
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
 ```
 
 Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
+
+Recommended persistent command approvals for ACP-driven Codex runs:
+
+```text
+["gh", "api"]
+["gh", "pr"]
+["gh", "issue"]
+["git", "add"]
+["git", "commit"]
+["git", "push"]
+["./scripts/cache-sync.sh"]
+["./scripts/cache-write-comment.sh"]
+```
+
+Avoid broader prefixes such as `["gh"]` or `["git"]`; the review workflow only needs the narrower operations above.
 
 ## Usage
 

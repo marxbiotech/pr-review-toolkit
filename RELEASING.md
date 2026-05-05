@@ -9,8 +9,10 @@ This document describes how to release new versions of the pr-review-toolkit plu
 | `.claude-plugin/plugin.json` | `version` | **Plugin version (authoritative source)** |
 | `.claude-plugin/marketplace.json` | `plugins[0].version` | Plugin version (must match plugin.json) |
 | `.claude-plugin/marketplace.json` | `metadata.version` | Marketplace format version (not plugin version, keep at 1.0.0) |
+| `.codex-plugin/plugin.json` | `version` | Codex plugin version (must match plugin.json) |
+| `.agents/plugins/marketplace.json` | `plugins[0].source.path` | Repo-scoped Codex marketplace entry (keep as `./`) |
 
-> **Important:** `plugin.json` version and `marketplace.json` plugins[0].version must always be identical.
+> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, and `.codex-plugin/plugin.json` must always use the same plugin version.
 
 ## Semantic Versioning
 
@@ -40,17 +42,18 @@ This project follows [Semantic Versioning](https://semver.org/):
 3. Click **Run workflow**
 
 The workflow will:
-- Update version in `plugin.json` and `marketplace.json`
+- Update version in `plugin.json`, `marketplace.json`, and `.codex-plugin/plugin.json`
 - Update `CHANGELOG.md`
 - Commit and push to main
 - Trigger the release workflow automatically
 
 ### Method B: Manual Release
 
-1. Update versions in both files:
+1. Update versions in all plugin manifests:
    ```bash
    # Edit .claude-plugin/plugin.json
    # Edit .claude-plugin/marketplace.json (plugins[0].version only)
+   # Edit .codex-plugin/plugin.json
    ```
 
 2. Update `CHANGELOG.md`:
@@ -59,7 +62,7 @@ The workflow will:
 
 3. Commit and push:
    ```bash
-   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
+   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
    git push
    ```
@@ -75,8 +78,9 @@ The workflow will:
 Runs on every PR to main:
 - Validates JSON syntax
 - Checks semver format
-- Ensures version consistency between files
+- Ensures version consistency between Claude and Codex plugin files
 - Verifies required files exist
+- Verifies Codex marketplace metadata, skill frontmatter, and toolkit-root contract
 
 ### release.yml (Auto Release)
 
@@ -108,9 +112,10 @@ Manually triggered workflow:
 
 ### Version mismatch error in PR
 
-Update both files to have matching versions:
+Update all plugin manifests to have matching versions:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
+- `.codex-plugin/plugin.json` → `version`
 
 ### Manual tag creation
 
@@ -133,3 +138,9 @@ After a release:
    /plugin install pr-review-toolkit
    ```
 3. Verify the plugin loads correctly in Claude Code
+4. Verify the Codex manifest and skill path:
+   ```bash
+   jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
+   test "$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)" = "./"
+   test "$(jq -r '.skills' .codex-plugin/plugin.json)" = "./codex/skills/"
+   ```

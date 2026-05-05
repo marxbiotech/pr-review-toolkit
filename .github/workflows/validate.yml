@@ -16,6 +16,8 @@ jobs:
           echo "Validating JSON files..."
           jq empty .claude-plugin/plugin.json
           jq empty .claude-plugin/marketplace.json
+          jq empty .codex-plugin/plugin.json
+          jq empty .agents/plugins/marketplace.json
           echo "✅ JSON syntax is valid"
 
       - name: Validate required files exist
@@ -24,6 +26,10 @@ jobs:
           required_files=(
             ".claude-plugin/plugin.json"
             ".claude-plugin/marketplace.json"
+            ".codex-plugin/plugin.json"
+            ".agents/plugins/marketplace.json"
+            "codex/skills/codex-review-pass/SKILL.md"
+            "codex/skills/codex-fix-worker/SKILL.md"
             "README.md"
             "LICENSE"
           )
@@ -40,6 +46,7 @@ jobs:
           echo "Validating version format..."
           PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
           MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          CODEX_PLUGIN_VERSION=$(jq -r '.version' .codex-plugin/plugin.json)
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -56,11 +63,18 @@ jobs:
           fi
           echo "✅ marketplace.json plugins[0].version: $MARKETPLACE_PLUGIN_VERSION"
 
+          if [[ ! "$CODEX_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in .codex-plugin/plugin.json: $CODEX_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ .codex-plugin/plugin.json version: $CODEX_PLUGIN_VERSION"
+
       - name: Validate version consistency
         run: |
           echo "Checking version consistency..."
           PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
           MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          CODEX_PLUGIN_VERSION=$(jq -r '.version' .codex-plugin/plugin.json)
 
           if [ "$PLUGIN_VERSION" != "$MARKETPLACE_PLUGIN_VERSION" ]; then
             echo "❌ Version mismatch!"
@@ -68,6 +82,15 @@ jobs:
             echo "   marketplace.json plugins: $MARKETPLACE_PLUGIN_VERSION"
             echo ""
             echo "Both versions must be identical. Update both files."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$CODEX_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   .codex-plugin/plugin.json:  $CODEX_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Codex plugin manifests must ship the same plugin version."
             exit 1
           fi
 
@@ -80,6 +103,13 @@ jobs:
           # Check required fields in plugin.json
           PLUGIN_NAME=$(jq -r '.name' .claude-plugin/plugin.json)
           PLUGIN_DESC=$(jq -r '.description' .claude-plugin/plugin.json)
+          CODEX_PLUGIN_NAME=$(jq -r '.name' .codex-plugin/plugin.json)
+          CODEX_PLUGIN_DESC=$(jq -r '.description' .codex-plugin/plugin.json)
+          CODEX_SKILLS_PATH=$(jq -r '.skills' .codex-plugin/plugin.json)
+          CODEX_MARKETPLACE_NAME=$(jq -r '.plugins[0].name' .agents/plugins/marketplace.json)
+          CODEX_MARKETPLACE_PATH=$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)
+          CODEX_MARKETPLACE_INSTALLATION=$(jq -r '.plugins[0].policy.installation' .agents/plugins/marketplace.json)
+          CODEX_MARKETPLACE_AUTH=$(jq -r '.plugins[0].policy.authentication' .agents/plugins/marketplace.json)
 
           if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
             echo "❌ Missing 'name' in plugin.json"
@@ -91,5 +121,83 @@ jobs:
             exit 1
           fi
 
+          if [ -z "$CODEX_PLUGIN_NAME" ] || [ "$CODEX_PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in .codex-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$CODEX_PLUGIN_DESC" ] || [ "$CODEX_PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in .codex-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ "$CODEX_SKILLS_PATH" != "./codex/skills/" ]; then
+            echo "❌ .codex-plugin/plugin.json skills path must be ./codex/skills/, got: $CODEX_SKILLS_PATH"
+            exit 1
+          fi
+
+          if [ ! -d "${CODEX_SKILLS_PATH#./}" ]; then
+            echo "❌ Codex skills path does not exist: $CODEX_SKILLS_PATH"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_NAME" != "$CODEX_PLUGIN_NAME" ]; then
+            echo "❌ Codex marketplace plugin name must match .codex-plugin/plugin.json name"
+            echo "   marketplace: $CODEX_MARKETPLACE_NAME"
+            echo "   plugin.json: $CODEX_PLUGIN_NAME"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_PATH" != "./" ]; then
+            echo "❌ Codex marketplace source.path must point at this repo plugin root, got: $CODEX_MARKETPLACE_PATH"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_INSTALLATION" != "AVAILABLE" ]; then
+            echo "❌ Codex marketplace policy.installation must be AVAILABLE"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_AUTH" != "ON_INSTALL" ]; then
+            echo "❌ Codex marketplace policy.authentication must be ON_INSTALL"
+            exit 1
+          fi
+
           echo "✅ Plugin name: $PLUGIN_NAME"
           echo "✅ Plugin description: $PLUGIN_DESC"
+          echo "✅ Codex plugin name: $CODEX_PLUGIN_NAME"
+          echo "✅ Codex plugin description: $CODEX_PLUGIN_DESC"
+          echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
+          echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
+
+      - name: Validate Codex skills
+        run: |
+          echo "Validating Codex skill frontmatter..."
+
+          for skill_dir in codex/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_name=$(basename "$skill_dir")
+            skill_file="$skill_dir/SKILL.md"
+
+            if [ ! -f "$skill_file" ]; then
+              echo "❌ Missing Codex skill file: $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q "^name: ${skill_name}$" "$skill_file"; then
+              echo "❌ Codex skill name must match directory: $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q "^description: " "$skill_file"; then
+              echo "❌ Missing Codex skill description: $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q 'PR_REVIEW_TOOLKIT_ROOT' "$skill_file"; then
+              echo "❌ Codex skill must document PR_REVIEW_TOOLKIT_ROOT: $skill_file"
+              exit 1
+            fi
+
+            echo "✅ Codex skill: $skill_name"
+          done
