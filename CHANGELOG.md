@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add Codex skill scaffolding for `codex-review-pass` and `codex-fix-worker`
+- Add compare-and-swap protection to `cache-write-comment.sh --stdin` via `--expected-content-hash`
+- Add shared `review-metadata-upgrade.sh` helper with fixtures and tests for metadata migration
+- Add shared `review-metadata-replace.sh` helper with preservation tests for metadata block updates
+- Document Codex integration design and Claude review responses
+
+### Changed
+
+- Update PR review skills to preserve multi-source metadata and use cache hash checks when writing
+
 ## [1.4.1] - 2026-02-06
 
 ### Changed

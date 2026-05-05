@@ -341,7 +341,7 @@ cache-read-comment.sh [PR_NUMBER] [--force-refresh]
 ### 寫入流程
 
 ```
-cache-write-comment.sh --stdin [PR_NUMBER] [--local-only]
+cache-write-comment.sh --stdin [PR_NUMBER] [--local-only] [--expected-content-hash HASH]
 cache-write-comment.sh --sync-from-cache [PR_NUMBER] [--force]
                         │
                         ▼
@@ -369,6 +369,8 @@ cache-write-comment.sh --sync-from-cache [PR_NUMBER] [--force]
                                   ▼
                           回傳 comment URL
 ```
+
+`--expected-content-hash HASH` 是本地 compare-and-swap 保護。寫入前會比對 `.pr-review-cache/pr-N.json` 的 `content_hash`；若不一致，以 exit code 4 中止，呼叫端應重新讀取、合併更新後重試。
 
 ---
 
