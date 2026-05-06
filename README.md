@@ -54,15 +54,17 @@ This repository also includes a repo-scoped Codex marketplace at `.agents/plugin
 | Skill | Description |
 |-------|-------------|
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
-| **codex-fix-worker** | Fix one selected PR review issue and update that issue's status |
+| **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
 
-Until public Codex marketplace distribution is finalized, install from source by cloning the repository and adding it as a local marketplace. The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
+Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex (consult your Codex version's docs for the exact syntax — `codex plugin marketplace add .` is the current recommendation but may change as the Codex CLI's plugin command surface is still evolving; see [Codex's plugin documentation](https://github.com/openai/codex#plugins) <!-- TODO: confirm canonical Codex plugin docs URL before final release --> or run `codex plugin --help` against your installed version). The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
 
 ```bash
 git clone https://github.com/marxbiotech/pr-review-toolkit.git
 cd pr-review-toolkit
 jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
-codex plugin marketplace add .
+# Then register this directory as a local plugin marketplace using the
+# subcommand documented for your Codex version (currently expected to be
+# `codex plugin marketplace add .`).
 ```
 
 Set the toolkit root for Codex sessions that run these skills:
@@ -73,20 +75,23 @@ export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
 
 Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
 
-Recommended persistent command approvals for ACP-driven Codex runs:
+**Recommended persistent command approvals for ACP-driven Codex runs:**
+
+ACP approval matching is a literal prefix match against the command Codex executes. Because Codex skills invoke helpers via `${PR_REVIEW_TOOLKIT_ROOT}/scripts/...` (absolute paths derived from the toolkit-root env var), approval entries must match that exact form — not `./scripts/...`.
 
 ```text
+["$PR_REVIEW_TOOLKIT_ROOT/scripts/get-pr-number.sh"]
+["$PR_REVIEW_TOOLKIT_ROOT/scripts/cache-read-comment.sh"]
+["$PR_REVIEW_TOOLKIT_ROOT/scripts/cache-write-comment.sh"]
+["$PR_REVIEW_TOOLKIT_ROOT/scripts/review-metadata-upgrade.sh"]
+["$PR_REVIEW_TOOLKIT_ROOT/scripts/review-metadata-replace.sh"]
 ["gh", "api"]
 ["gh", "pr"]
-["gh", "issue"]
-["git", "add"]
-["git", "commit"]
-["git", "push"]
-["./scripts/cache-sync.sh"]
-["./scripts/cache-write-comment.sh"]
+["git", "diff"]
+["git", "status"]
 ```
 
-Avoid broader prefixes such as `["gh"]` or `["git"]`; the review workflow only needs the narrower operations above.
+Avoid broader prefixes like `["bash"]` or `["./"]` that would auto-approve unrelated commands.
 
 ## Usage
 

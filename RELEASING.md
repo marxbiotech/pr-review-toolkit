@@ -14,6 +14,8 @@ This document describes how to release new versions of the pr-review-toolkit plu
 
 > **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, and `.codex-plugin/plugin.json` must always use the same plugin version.
 
+> **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. Both ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
+
 ## Semantic Versioning
 
 This project follows [Semantic Versioning](https://semver.org/):
@@ -60,14 +62,29 @@ The workflow will:
    - Add a new section under `## [Unreleased]`
    - Follow [Keep a Changelog](https://keepachangelog.com/) format
 
-3. Commit and push:
+3. Verify all three versions match before committing:
+   ```bash
+   A=$(jq -r '.version' .claude-plugin/plugin.json)
+   B=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+   C=$(jq -r '.version' .codex-plugin/plugin.json)
+   if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
+     echo "Version mismatch: A=$A B=$B C=$C"
+     echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
+     exit 1
+   fi
+   echo "✓ All three at $A"
+   ```
+
+   **Run this command before `git commit`.** If it fails, fix the missing manifest and re-run. CI on main (`validate.yml` push trigger) will also catch drift, but local verification is faster and prevents a known-bad commit from reaching origin.
+
+4. Commit and push:
    ```bash
    git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
    git push
    ```
 
-4. The release workflow will automatically:
+5. The release workflow will automatically:
    - Create a git tag
    - Create a GitHub Release with auto-generated notes
 

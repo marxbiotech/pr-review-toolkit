@@ -3,6 +3,8 @@ name: Validate Plugin
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   validate:
@@ -44,9 +46,18 @@ jobs:
       - name: Validate semver format
         run: |
           echo "Validating version format..."
-          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
-          CODEX_PLUGIN_VERSION=$(jq -r '.version' .codex-plugin/plugin.json)
+          PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+            exit 1
+          }
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -72,9 +83,18 @@ jobs:
       - name: Validate version consistency
         run: |
           echo "Checking version consistency..."
-          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
-          CODEX_PLUGIN_VERSION=$(jq -r '.version' .codex-plugin/plugin.json)
+          PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+            exit 1
+          }
 
           if [ "$PLUGIN_VERSION" != "$MARKETPLACE_PLUGIN_VERSION" ]; then
             echo "❌ Version mismatch!"
@@ -101,15 +121,50 @@ jobs:
           echo "Validating plugin metadata..."
 
           # Check required fields in plugin.json
-          PLUGIN_NAME=$(jq -r '.name' .claude-plugin/plugin.json)
-          PLUGIN_DESC=$(jq -r '.description' .claude-plugin/plugin.json)
-          CODEX_PLUGIN_NAME=$(jq -r '.name' .codex-plugin/plugin.json)
-          CODEX_PLUGIN_DESC=$(jq -r '.description' .codex-plugin/plugin.json)
-          CODEX_SKILLS_PATH=$(jq -r '.skills' .codex-plugin/plugin.json)
-          CODEX_MARKETPLACE_NAME=$(jq -r '.plugins[0].name' .agents/plugins/marketplace.json)
-          CODEX_MARKETPLACE_PATH=$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)
-          CODEX_MARKETPLACE_INSTALLATION=$(jq -r '.plugins[0].policy.installation' .agents/plugins/marketplace.json)
-          CODEX_MARKETPLACE_AUTH=$(jq -r '.plugins[0].policy.authentication' .agents/plugins/marketplace.json)
+          PLUGIN_NAME=$(jq -e -r '.name' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from .claude-plugin/plugin.json"
+            exit 1
+          }
+          PLUGIN_DESC=$(jq -e -r '.description' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MP_NAME=$(jq -e -r '.plugins[0].name' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          MP_DESC=$(jq -e -r '.plugins[0].description' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].description from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_NAME=$(jq -e -r '.name' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_PLUGIN_DESC=$(jq -e -r '.description' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_SKILLS_PATH=$(jq -e -r '.skills' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .skills from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_PATH=$(jq -e -r '.plugins[0].source.path' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.path from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_INSTALLATION=$(jq -e -r '.plugins[0].policy.installation' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].policy.installation from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_AUTH=$(jq -e -r '.plugins[0].policy.authentication' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].policy.authentication from .agents/plugins/marketplace.json"
+            exit 1
+          }
 
           if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
             echo "❌ Missing 'name' in plugin.json"
@@ -120,6 +175,18 @@ jobs:
             echo "❌ Missing 'description' in plugin.json"
             exit 1
           fi
+
+          if [ "$MP_NAME" != "$PLUGIN_NAME" ]; then
+            echo "::error::Claude name drift: plugin.json=$PLUGIN_NAME marketplace.json=$MP_NAME"
+            exit 1
+          fi
+
+          if [ -z "$MP_DESC" ] || [ "$MP_DESC" = "null" ]; then
+            echo "::error::Empty or missing description in .claude-plugin/marketplace.json"
+            exit 1
+          fi
+
+          echo "✓ Claude marketplace parity: $MP_NAME"
 
           if [ -z "$CODEX_PLUGIN_NAME" ] || [ "$CODEX_PLUGIN_NAME" = "null" ]; then
             echo "❌ Missing 'name' in .codex-plugin/plugin.json"
@@ -170,12 +237,22 @@ jobs:
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
 
+      - name: Install yq
+        run: |
+          if ! command -v yq >/dev/null 2>&1; then
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          yq --version
+
       - name: Validate Codex skills
         run: |
           echo "Validating Codex skill frontmatter..."
 
+          skill_count=0
           for skill_dir in codex/skills/*; do
             [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
             skill_name=$(basename "$skill_dir")
             skill_file="$skill_dir/SKILL.md"
 
@@ -184,13 +261,23 @@ jobs:
               exit 1
             fi
 
-            if ! grep -q "^name: ${skill_name}$" "$skill_file"; then
-              echo "❌ Codex skill name must match directory: $skill_file"
+            # Extract YAML frontmatter (between first two --- lines)
+            fm=$(awk '/^---$/{c++; next} c==1{print} c==2{exit}' "$skill_file")
+            if [ -z "$fm" ]; then
+              echo "::error::No YAML frontmatter in $skill_file"
               exit 1
             fi
 
-            if ! grep -q "^description: " "$skill_file"; then
-              echo "❌ Missing Codex skill description: $skill_file"
+            name=$(printf '%s\n' "$fm" | yq -r '.name // ""')
+            desc=$(printf '%s\n' "$fm" | yq -r '.description // ""')
+
+            if [ "$name" != "$skill_name" ]; then
+              echo "::error::name mismatch: '$name' != '$skill_name' in $skill_file"
+              exit 1
+            fi
+
+            if [ -z "$desc" ]; then
+              echo "::error::Empty or missing description in $skill_file"
               exit 1
             fi
 
@@ -201,3 +288,9 @@ jobs:
 
             echo "✅ Codex skill: $skill_name"
           done
+
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::No Codex skills found under codex/skills/"
+            exit 1
+          fi
+          echo "Validated $skill_count Codex skill(s)"

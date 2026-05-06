@@ -18,6 +18,44 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify version parity
+        run: |
+          A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
+          B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
+          C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+          if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
+            echo "::error::Refusing to tag: version drift across manifests"
+            echo "  .claude-plugin/plugin.json:        $A"
+            echo "  .claude-plugin/marketplace.json:   $B"
+            echo "  .codex-plugin/plugin.json:         $C"
+            exit 1
+          fi
+          echo "✓ All three manifests at $A"
+
+      - name: Verify release artifacts
+        run: |
+          for f in \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json \
+            codex/skills/codex-review-pass/SKILL.md \
+            codex/skills/codex-fix-worker/SKILL.md; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Release blocked: missing artifact $f at HEAD"
+              exit 1
+            fi
+          done
+          jq empty \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json
+          echo "✓ All release artifacts present and valid JSON"
+
       - name: Get version from plugin.json
         id: version
         run: |
@@ -40,7 +78,21 @@ jobs:
         id: prev_tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          set +e
+          DESCRIBE_OUTPUT=$(git describe --tags --abbrev=0 2>&1)
+          DESCRIBE_RC=$?
+          set -e
+
+          if [ "$DESCRIBE_RC" -eq 0 ]; then
+            PREV_TAG="$DESCRIBE_OUTPUT"
+          elif echo "$DESCRIBE_OUTPUT" | grep -q "No names found"; then
+            PREV_TAG=""
+            echo "No previous tags (initial release)"
+          else
+            echo "::error::git describe failed unexpectedly (exit $DESCRIBE_RC):"
+            echo "$DESCRIBE_OUTPUT"
+            exit 1
+          fi
           echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
           echo "Previous tag: $PREV_TAG"
 

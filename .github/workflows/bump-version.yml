@@ -41,20 +41,20 @@ jobs:
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
 
-      - name: Update Claude plugin.json
+      - name: Bump plugin manifests
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
         run: |
-          jq '.version = "${{ steps.bump.outputs.new }}"' .claude-plugin/plugin.json > tmp.json
-          mv tmp.json .claude-plugin/plugin.json
-
-      - name: Update Claude marketplace.json
-        run: |
-          jq '.plugins[0].version = "${{ steps.bump.outputs.new }}"' .claude-plugin/marketplace.json > tmp.json
-          mv tmp.json .claude-plugin/marketplace.json
-
-      - name: Update Codex plugin.json
-        run: |
-          jq '.version = "${{ steps.bump.outputs.new }}"' .codex-plugin/plugin.json > tmp.json
-          mv tmp.json .codex-plugin/plugin.json
+          for spec in \
+            ".claude-plugin/plugin.json:.version" \
+            ".claude-plugin/marketplace.json:.plugins[0].version" \
+            ".codex-plugin/plugin.json:.version"; do
+            file="${spec%%:*}"
+            path="${spec#*:}"
+            tmp=$(mktemp)
+            jq --arg v "$NEW_VERSION" "$path = \$v" "$file" > "$tmp"
+            mv "$tmp" "$file"
+          done
 
       - name: Update CHANGELOG.md
         run: |
@@ -72,19 +72,43 @@ jobs:
               content = f.read()
 
           marker = "## [Unreleased]"
+          inserted = False
           if marker in content:
               content = content.replace(marker, marker + "\n" + entry, 1)
+              inserted = True
           else:
               lines = content.split("\n")
               for i, line in enumerate(lines):
                   if line.startswith("## ["):
                       lines.insert(i, entry)
+                      inserted = True
                       break
               content = "\n".join(lines)
+
+          if not inserted:
+              print(
+                  "::error::CHANGELOG.md has neither '## [Unreleased]' marker nor any '## [' heading; "
+                  "cannot insert new version entry. Restore the changelog format before bumping.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
 
           with open("CHANGELOG.md", "w") as f:
               f.write(content)
           PYEOF
+
+      - name: Verify atomic bump
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+        run: |
+          A=$(jq -r '.version' .claude-plugin/plugin.json)
+          B=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          C=$(jq -r '.version' .codex-plugin/plugin.json)
+          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ]; then
+            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C"
+            exit 1
+          fi
+          echo "✓ All three manifests at $NEW_VERSION"
 
       - name: Commit and push
         run: |
