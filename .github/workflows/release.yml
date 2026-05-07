@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.claude-plugin/plugin.json'
+      - '.codex-plugin/plugin.json'
 
 jobs:
   release:
@@ -17,29 +18,117 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify version parity
+        run: |
+          set -euo pipefail
+          A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
+          B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
+          C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+          if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
+            echo "::error::Refusing to tag: version drift across manifests"
+            echo "  .claude-plugin/plugin.json:        $A"
+            echo "  .claude-plugin/marketplace.json:   $B"
+            echo "  .codex-plugin/plugin.json:         $C"
+            exit 1
+          fi
+          echo "✓ All three manifests at $A"
+
+      - name: Verify release artifacts
+        run: |
+          set -euo pipefail
+          jq empty \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json
+
+          # Keep this manifest list in sync with validate.yml's required_files
+          # and JSON syntax checks when adding packaging metadata files.
+          for f in \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Release blocked: missing artifact $f at HEAD"
+              exit 1
+            fi
+          done
+
+          # Keep in sync with validate.yml's Codex skill loop.
+          skill_count=0
+          for skill_dir in codex/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
+            skill_file="$skill_dir/SKILL.md"
+            if [ ! -f "$skill_file" ]; then
+              echo "::error::Release blocked: missing Codex skill $skill_file at HEAD"
+              exit 1
+            fi
+          done
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::Release blocked: no Codex skills found under codex/skills/"
+            exit 1
+          fi
+          echo "✓ All release artifacts present and valid JSON"
+
       - name: Get version from plugin.json
         id: version
         run: |
-          VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          set -euo pipefail
+          VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
         id: check_tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          set -euo pipefail
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping release"
+            echo "Tag v$VERSION already exists, skipping release"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.version.outputs.version }} does not exist, proceeding with release"
+            echo "Tag v$VERSION does not exist, proceeding with release"
           fi
 
       - name: Get previous tag
         id: prev_tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          set -euo pipefail
+          set +e
+          TAG_LIST_OUTPUT=$(git tag --list 2>&1)
+          TAG_LIST_RC=$?
+          set -e
+          if [ "$TAG_LIST_RC" -ne 0 ]; then
+            echo "::error::git tag --list failed unexpectedly:"
+            echo "$TAG_LIST_OUTPUT"
+            exit 1
+          fi
+          if [ -z "$TAG_LIST_OUTPUT" ]; then
+            PREV_TAG=""
+            echo "No previous tags (initial release)"
+          else
+            # git tag --list shows tags exist; git describe may still fail if no
+            # tag is reachable from HEAD (e.g., orphan branch, hotfix branch
+            # forked before the only tag, etc.). Fall back to empty PREV_TAG so
+            # the release notes degrade gracefully to "initial release" framing
+            # instead of aborting the entire workflow.
+            set +e
+            PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+            DESCRIBE_RC=$?
+            set -e
+            if [ "$DESCRIBE_RC" -ne 0 ]; then
+              echo "::warning::git describe found no tag reachable from HEAD; falling back to initial-release framing"
+              PREV_TAG=""
+            fi
+          fi
           echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
           echo "Previous tag: $PREV_TAG"
 
@@ -47,8 +136,9 @@ jobs:
         id: changelog
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          PREV_TAG="${{ steps.prev_tag.outputs.tag }}"
+          set -euo pipefail
+          VERSION="$VERSION_VALUE"
+          PREV_TAG="$PREV_TAG_VALUE"
 
           echo "## What's Changed in v$VERSION" > release_notes.md
           echo "" >> release_notes.md
@@ -72,16 +162,24 @@ jobs:
           echo "/plugin marketplace add marxbiotech/pr-review-toolkit" >> release_notes.md
           echo "/plugin install pr-review-toolkit" >> release_notes.md
           echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "For Codex, this release includes a source plugin manifest at \`.codex-plugin/plugin.json\` with skills under \`codex/skills/\`." >> release_notes.md
 
           cat release_notes.md
+        env:
+          VERSION_VALUE: ${{ steps.version.outputs.version }}
+          PREV_TAG_VALUE: ${{ steps.prev_tag.outputs.tag }}
 
       - name: Create tag
         if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'

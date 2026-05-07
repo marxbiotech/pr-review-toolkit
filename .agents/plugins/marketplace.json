@@ -1,0 +1,20 @@
+{
+  "name": "pr-review-toolkit",
+  "interface": {
+    "displayName": "PR Review Toolkit"
+  },
+  "plugins": [
+    {
+      "name": "pr-review-toolkit",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -219,8 +219,18 @@ fi
 # 0 markers -> not a review comment (refuse to poison the cache).
 # >1 markers -> downstream replace/upgrade scripts will refuse to handle a multi-block payload,
 #   so refuse here at the producer instead of writing a poison pill.
-# Note: `|| true` because `grep -c` returns 1 on zero matches under `set -euo pipefail`.
-META_COUNT=$(printf '%s\n' "$CONTENT" | grep -c '^<!-- pr-review-metadata' || true)
+# `grep -c` exit codes: 0 = match found, 1 = zero matches (legitimate),
+# 2+ = real error (malformed pattern, I/O failure). The `|| true` form
+# swallows all three; we want to keep rc=0 and rc=1 (treating zero
+# matches as a valid count of 0) but fail loudly on rc>=2.
+set +e
+META_COUNT=$(printf '%s\n' "$CONTENT" | grep -c '^<!-- pr-review-metadata')
+GREP_RC=$?
+set -e
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "::error::grep failed unexpectedly (rc=$GREP_RC) while counting metadata markers" >&2
+  exit 1
+fi
 if [ "$META_COUNT" -eq 0 ]; then
   echo "Error: content does not contain '<!-- pr-review-metadata' marker; refusing to write" >&2
   exit 2

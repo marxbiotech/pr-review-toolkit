@@ -61,7 +61,18 @@ if [ -z "$COMMENT_CONTENT" ]; then
   exit 2
 fi
 
-META_COUNT=$(printf '%s\n' "$COMMENT_CONTENT" | grep -c '^<!-- pr-review-metadata' || true)
+# `grep -c` exit codes: 0 = match found, 1 = zero matches (legitimate),
+# 2+ = real error (malformed pattern, I/O failure). The `|| true` form
+# swallows all three; we want to keep rc=0 and rc=1 (treating zero
+# matches as a valid count of 0) but fail loudly on rc>=2.
+set +e
+META_COUNT=$(printf '%s\n' "$COMMENT_CONTENT" | grep -c '^<!-- pr-review-metadata')
+GREP_RC=$?
+set -e
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "::error::grep failed unexpectedly (rc=$GREP_RC) while counting metadata markers" >&2
+  exit 1
+fi
 if [ "$META_COUNT" -gt 1 ]; then
   echo "Error: multiple pr-review metadata blocks found" >&2
   exit 4

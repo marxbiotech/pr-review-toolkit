@@ -29,73 +29,128 @@ jobs:
           node-version: '20'
 
       - name: Install semver
-        run: npm install -g semver
+        run: |
+          set -euo pipefail
+          npm install -g semver
 
       - name: Bump version
         id: bump
         run: |
-          CURRENT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          NEW_VERSION=$(semver -i ${{ inputs.bump_type }} "$CURRENT_VERSION")
+          set -euo pipefail
+          CURRENT_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json)
+          NEW_VERSION=$(semver -i "$BUMP_TYPE" "$CURRENT_VERSION")
 
           echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION"
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
 
-      - name: Update plugin.json
+      - name: Bump plugin manifests
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
         run: |
-          jq '.version = "${{ steps.bump.outputs.new }}"' .claude-plugin/plugin.json > tmp.json
-          mv tmp.json .claude-plugin/plugin.json
-
-      - name: Update marketplace.json
-        run: |
-          jq '.plugins[0].version = "${{ steps.bump.outputs.new }}"' .claude-plugin/marketplace.json > tmp.json
-          mv tmp.json .claude-plugin/marketplace.json
+          set -euo pipefail
+          for spec in \
+            ".claude-plugin/plugin.json:.version" \
+            ".claude-plugin/marketplace.json:.plugins[0].version" \
+            ".codex-plugin/plugin.json:.version"; do
+            file="${spec%%:*}"
+            path="${spec#*:}"
+            tmp=$(mktemp)
+            jq --arg v "$NEW_VERSION" "$path = \$v" "$file" > "$tmp"
+            mv "$tmp" "$file"
+          done
 
       - name: Update CHANGELOG.md
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
         run: |
+          set -euo pipefail
           DATE=$(date +%Y-%m-%d)
-          NEW_VERSION="${{ steps.bump.outputs.new }}"
-          BUMP_TYPE="${{ inputs.bump_type }}"
 
           python3 - "$NEW_VERSION" "$DATE" "$BUMP_TYPE" <<'PYEOF'
           import sys
 
           version, date, bump_type = sys.argv[1], sys.argv[2], sys.argv[3]
-          entry = f"\n## [{version}] - {date}\n\n### Changed\n\n- Version bump ({bump_type})\n"
+          body = f"\n## [{version}] - {date}\n\n### Changed\n\n- Version bump ({bump_type})\n"
 
           with open("CHANGELOG.md", "r") as f:
               content = f.read()
 
           marker = "## [Unreleased]"
+          inserted = False
           if marker in content:
-              content = content.replace(marker, marker + "\n" + entry, 1)
+              # Insert the new release section immediately BELOW the [Unreleased]
+              # marker. The marker itself stays at the top so subsequent bumps
+              # find it again. The body includes a stub "Version bump (TYPE)"
+              # entry under ### Changed; if the user authored richer release
+              # notes under [Unreleased], they will sit in their original
+              # location below the new release section.
+              content = content.replace(marker, f"{marker}{body}", 1)
+              inserted = True
           else:
               lines = content.split("\n")
               for i, line in enumerate(lines):
                   if line.startswith("## ["):
-                      lines.insert(i, entry)
+                      lines.insert(i, body)
+                      inserted = True
                       break
               content = "\n".join(lines)
+
+          if not inserted:
+              print(
+                  "::error::CHANGELOG.md has neither '## [Unreleased]' marker nor any '## [' heading; "
+                  "cannot insert new version entry. Restore the changelog format before bumping.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
 
           with open("CHANGELOG.md", "w") as f:
               f.write(content)
           PYEOF
 
-      - name: Commit and push
+      - name: Verify atomic bump
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
         run: |
+          set -euo pipefail
+          A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
+          B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
+          C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ]; then
+            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C"
+            exit 1
+          fi
+          echo "✓ All three manifests at $NEW_VERSION"
+
+      - name: Commit and push
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.new }}"
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
+          git commit -m "chore: bump version to $NEW_VERSION"
           git push
 
       - name: Summary
+        env:
+          CURRENT_VERSION: ${{ steps.bump.outputs.current }}
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
         run: |
+          set -euo pipefail
           echo "## Version Bumped! 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Previous version:** ${{ steps.bump.outputs.current }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **New version:** ${{ steps.bump.outputs.new }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Bump type:** ${{ inputs.bump_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous version:** $CURRENT_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **New version:** $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bump type:** $BUMP_TYPE" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The release workflow will automatically create a GitHub Release." >> $GITHUB_STEP_SUMMARY

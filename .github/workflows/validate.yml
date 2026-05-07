@@ -3,6 +3,8 @@ name: Validate Plugin
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   validate:
@@ -13,17 +15,27 @@ jobs:
 
       - name: Validate JSON syntax
         run: |
+          set -euo pipefail
           echo "Validating JSON files..."
           jq empty .claude-plugin/plugin.json
           jq empty .claude-plugin/marketplace.json
+          jq empty .codex-plugin/plugin.json
+          jq empty .agents/plugins/marketplace.json
           echo "✅ JSON syntax is valid"
 
       - name: Validate required files exist
         run: |
+          set -euo pipefail
           echo "Checking required files..."
+          # Hardcoded list of stable required files (manifests + repo conventions).
+          # Codex skill files (codex/skills/*/SKILL.md) are validated dynamically
+          # in the later "Validate Codex skills" step — adding a new skill does
+          # not require updating this list.
           required_files=(
             ".claude-plugin/plugin.json"
             ".claude-plugin/marketplace.json"
+            ".codex-plugin/plugin.json"
+            ".agents/plugins/marketplace.json"
             "README.md"
             "LICENSE"
           )
@@ -37,9 +49,20 @@ jobs:
 
       - name: Validate semver format
         run: |
+          set -euo pipefail
           echo "Validating version format..."
-          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+            exit 1
+          }
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -56,11 +79,28 @@ jobs:
           fi
           echo "✅ marketplace.json plugins[0].version: $MARKETPLACE_PLUGIN_VERSION"
 
+          if [[ ! "$CODEX_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in .codex-plugin/plugin.json: $CODEX_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ .codex-plugin/plugin.json version: $CODEX_PLUGIN_VERSION"
+
       - name: Validate version consistency
         run: |
+          set -euo pipefail
           echo "Checking version consistency..."
-          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
-          MARKETPLACE_PLUGIN_VERSION=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+            exit 1
+          }
 
           if [ "$PLUGIN_VERSION" != "$MARKETPLACE_PLUGIN_VERSION" ]; then
             echo "❌ Version mismatch!"
@@ -71,15 +111,67 @@ jobs:
             exit 1
           fi
 
+          if [ "$PLUGIN_VERSION" != "$CODEX_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   .codex-plugin/plugin.json:  $CODEX_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Codex plugin manifests must ship the same plugin version."
+            exit 1
+          fi
+
           echo "✅ Versions are consistent: $PLUGIN_VERSION"
 
       - name: Validate plugin metadata
         run: |
+          set -euo pipefail
           echo "Validating plugin metadata..."
 
           # Check required fields in plugin.json
-          PLUGIN_NAME=$(jq -r '.name' .claude-plugin/plugin.json)
-          PLUGIN_DESC=$(jq -r '.description' .claude-plugin/plugin.json)
+          PLUGIN_NAME=$(jq -e -r '.name' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from .claude-plugin/plugin.json"
+            exit 1
+          }
+          PLUGIN_DESC=$(jq -e -r '.description' .claude-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from .claude-plugin/plugin.json"
+            exit 1
+          }
+          MP_NAME=$(jq -e -r '.plugins[0].name' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          MP_DESC=$(jq -e -r '.plugins[0].description' .claude-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].description from .claude-plugin/marketplace.json"
+            exit 1
+          }
+          CODEX_PLUGIN_NAME=$(jq -e -r '.name' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_PLUGIN_DESC=$(jq -e -r '.description' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_SKILLS_PATH=$(jq -e -r '.skills' .codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .skills from .codex-plugin/plugin.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_PATH=$(jq -e -r '.plugins[0].source.path' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.path from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_INSTALLATION=$(jq -e -r '.plugins[0].policy.installation' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].policy.installation from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          CODEX_MARKETPLACE_AUTH=$(jq -e -r '.plugins[0].policy.authentication' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].policy.authentication from .agents/plugins/marketplace.json"
+            exit 1
+          }
 
           if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
             echo "❌ Missing 'name' in plugin.json"
@@ -91,5 +183,177 @@ jobs:
             exit 1
           fi
 
+          if [ "$MP_NAME" != "$PLUGIN_NAME" ]; then
+            echo "::error::Claude name drift: plugin.json=$PLUGIN_NAME marketplace.json=$MP_NAME"
+            exit 1
+          fi
+
+          if [ -z "$MP_DESC" ] || [ "$MP_DESC" = "null" ]; then
+            echo "::error::Empty or missing description in .claude-plugin/marketplace.json"
+            exit 1
+          fi
+
+          if [ "$MP_DESC" != "$PLUGIN_DESC" ]; then
+            echo "::error::Claude marketplace description drift:"
+            echo "  plugin.json:      $PLUGIN_DESC"
+            echo "  marketplace.json: $MP_DESC"
+            exit 1
+          fi
+
+          echo "✓ Claude marketplace parity (name + description): $MP_NAME"
+
+          if [ -z "$CODEX_PLUGIN_NAME" ] || [ "$CODEX_PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in .codex-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$CODEX_PLUGIN_DESC" ] || [ "$CODEX_PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in .codex-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ "$CODEX_SKILLS_PATH" != "./codex/skills/" ]; then
+            echo "❌ .codex-plugin/plugin.json skills path must be ./codex/skills/, got: $CODEX_SKILLS_PATH"
+            exit 1
+          fi
+
+          if [ ! -d "${CODEX_SKILLS_PATH#./}" ]; then
+            echo "❌ Codex skills path does not exist: $CODEX_SKILLS_PATH"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_NAME" != "$CODEX_PLUGIN_NAME" ]; then
+            echo "❌ Codex marketplace plugin name must match .codex-plugin/plugin.json name"
+            echo "   marketplace: $CODEX_MARKETPLACE_NAME"
+            echo "   plugin.json: $CODEX_PLUGIN_NAME"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_PATH" != "./" ]; then
+            echo "❌ Codex marketplace source.path must point at this repo plugin root, got: $CODEX_MARKETPLACE_PATH"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_INSTALLATION" != "AVAILABLE" ]; then
+            echo "❌ Codex marketplace policy.installation must be AVAILABLE"
+            exit 1
+          fi
+
+          if [ "$CODEX_MARKETPLACE_AUTH" != "ON_INSTALL" ]; then
+            echo "❌ Codex marketplace policy.authentication must be ON_INSTALL"
+            exit 1
+          fi
+
           echo "✅ Plugin name: $PLUGIN_NAME"
           echo "✅ Plugin description: $PLUGIN_DESC"
+          echo "✅ Codex plugin name: $CODEX_PLUGIN_NAME"
+          echo "✅ Codex plugin description: $CODEX_PLUGIN_DESC"
+          echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
+          echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          # Force-install pinned mikefarah/yq v4.45.1, overwriting any pre-existing
+          # yq binary (Python yq vs mikefarah yq have incompatible query syntaxes,
+          # and runner images may ship either flavor — `command -v` cannot tell
+          # them apart). Reinstalling unconditionally is the only way to keep CI
+          # deterministic across image rotations. Cost: ~3-5s per CI run.
+          #
+          # Design Decision: `wget -O /usr/local/bin/yq` truncates the target on
+          # open and may leave a partial binary if all --tries=3 attempts fail.
+          # We accept this without a temp-file + atomic-install pattern because
+          # (a) GitHub-hosted runners are ephemeral, so a truncated yq cannot
+          # leak across jobs; (b) the post-install `yq --version` and grep guard
+          # below run in the same shell with `set -e`, so any partial/wrong-flavor
+          # binary aborts the workflow before any downstream step can read it.
+          sudo wget --tries=3 --timeout=20 --retry-connrefused -O /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+          # Sanity check: confirm we got mikefarah's yq, not Python yq.
+          # mikefarah's `yq --version` output contains "yq (https://github.com/mikefarah/yq/)"
+          # while Python yq prints "yq <semver>" with no GitHub URL.
+          if ! yq --version 2>&1 | grep -q "mikefarah/yq"; then
+            echo "::error::yq install did not produce mikefarah's yq binary; got: $(yq --version 2>&1)"
+            exit 1
+          fi
+
+      - name: Validate Codex skills
+        run: |
+          set -euo pipefail
+          echo "Validating Codex skill frontmatter..."
+
+          skill_count=0
+          for skill_dir in codex/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
+            skill_name=$(basename "$skill_dir")
+            skill_file="$skill_dir/SKILL.md"
+
+            if [ ! -f "$skill_file" ]; then
+              echo "❌ Missing Codex skill file: $skill_file"
+              exit 1
+            fi
+
+            # Extract YAML frontmatter. The opening --- delimiter MUST be on line 1
+            # (anchored) so a markdown thematic break (--- on its own line) inside
+            # the body cannot be misread as the frontmatter delimiter. The closing
+            # --- is then matched within the awk extractor.
+            first_line=$(head -n 1 "$skill_file")
+            if [ "$first_line" != "---" ]; then
+              echo "::error::$skill_file: opening '---' frontmatter delimiter must be on line 1 (got: '$first_line')"
+              exit 1
+            fi
+            fm=$(awk 'NR==1 && /^---[[:space:]]*$/ {in_fm=1; next}
+                      in_fm && /^---[[:space:]]*$/ {exit}
+                      in_fm {print}' "$skill_file")
+            if [ -z "$fm" ]; then
+              echo "::error::$skill_file: missing closing '---' frontmatter delimiter"
+              exit 1
+            fi
+
+            name=$(printf '%s\n' "$fm" | yq -r '.name // ""')
+            desc=$(printf '%s\n' "$fm" | yq -r '.description // ""')
+
+            if [ "$name" != "$skill_name" ]; then
+              echo "::error::name mismatch: '$name' != '$skill_name' in $skill_file"
+              exit 1
+            fi
+
+            if [ -z "$desc" ]; then
+              echo "::error::Empty or missing description in $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q 'PR_REVIEW_TOOLKIT_ROOT' "$skill_file"; then
+              echo "❌ Codex skill must document PR_REVIEW_TOOLKIT_ROOT: $skill_file"
+              exit 1
+            fi
+
+            echo "✅ Codex skill: $skill_name"
+          done
+
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::No Codex skills found under codex/skills/"
+            exit 1
+          fi
+          echo "Validated $skill_count Codex skill(s)"
+
+      - name: Run shell test suites
+        run: |
+          set -euo pipefail
+          # Dynamic discovery: any tests/*-test.sh is auto-included. The empty-glob
+          # guard prevents a silent pass if the directory is missing or all tests
+          # were renamed away from the *-test.sh convention.
+          shopt -s nullglob
+          test_files=(tests/*-test.sh)
+          shopt -u nullglob
+          if [ "${#test_files[@]}" -eq 0 ]; then
+            echo "::error::No shell test suites found under tests/*-test.sh"
+            exit 1
+          fi
+          for t in "${test_files[@]}"; do
+            echo "▶ Running $t"
+            bash "$t"
+          done

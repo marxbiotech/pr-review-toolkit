@@ -47,27 +47,51 @@ git clone https://github.com/marxbiotech/pr-review-toolkit.git
 claude --plugin-dir /path/to/pr-review-toolkit
 ```
 
-### Codex Skills (From Source)
+### Codex Plugin / Skills (From Source)
 
-This repository also includes Codex skill definitions under `codex/skills/`:
+This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin manifest at `.codex-plugin/plugin.json`, and Codex skill definitions under `codex/skills/`:
 
 | Skill | Description |
 |-------|-------------|
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
-| **codex-fix-worker** | Fix one selected PR review issue and update that issue's status |
+| **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
 
-<!-- Design Decision: deliberate hand-wavy install instruction.
-     The Codex marketplace metadata format and canonical install location are not yet finalized,
-     so this README intentionally avoids prescribing a concrete path (e.g., ~/.codex/skills/) that
-     could become wrong as Codex packaging stabilizes. Once marketplace metadata is published,
-     replace the hand-wavy sentence below with explicit cp/ln commands and a target path. -->
-Until Codex marketplace metadata is finalized, install from source by making these skill directories available to Codex and setting the toolkit root:
+Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
+
+```bash
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
+cd pr-review-toolkit
+jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
+# Then register this directory as a local plugin marketplace using the
+# subcommand documented for your Codex version (currently expected to be
+# `codex plugin marketplace add .`).
+```
+
+Set the toolkit root for Codex sessions that run these skills:
 
 ```bash
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
 ```
 
 Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
+
+**Recommended persistent command approvals for ACP-driven Codex runs:**
+
+ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your checkout — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`. Replace `/path/to/pr-review-toolkit` below with the absolute path of your local checkout, for example the output of `realpath .` from the repository root.
+
+```text
+["/path/to/pr-review-toolkit/scripts/get-pr-number.sh"]
+["/path/to/pr-review-toolkit/scripts/cache-read-comment.sh"]
+["/path/to/pr-review-toolkit/scripts/cache-write-comment.sh"]
+["/path/to/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
+["/path/to/pr-review-toolkit/scripts/review-metadata-replace.sh"]
+["gh", "api"]
+["gh", "pr"]
+["git", "diff"]
+["git", "status"]
+```
+
+Avoid broader prefixes like `["bash"]` or `["./"]` that would auto-approve unrelated commands.
 
 ## Usage
 
