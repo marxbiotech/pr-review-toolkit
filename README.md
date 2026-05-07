@@ -77,7 +77,7 @@ Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state co
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
-ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your checkout — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`.
+ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your checkout — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`. Replace `/path/to/pr-review-toolkit` below with the absolute path of your local checkout, for example the output of `realpath .` from the repository root.
 
 ```text
 ["/path/to/pr-review-toolkit/scripts/get-pr-number.sh"]

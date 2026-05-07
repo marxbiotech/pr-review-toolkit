@@ -45,6 +45,8 @@ jobs:
             .codex-plugin/plugin.json \
             .agents/plugins/marketplace.json
 
+          # Keep this manifest list in sync with validate.yml's required_files
+          # and JSON syntax checks when adding packaging metadata files.
           for f in \
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
@@ -83,14 +85,16 @@ jobs:
 
       - name: Check if tag exists
         id: check_tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping release"
+            echo "Tag v$VERSION already exists, skipping release"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.version.outputs.version }} does not exist, proceeding with release"
+            echo "Tag v$VERSION does not exist, proceeding with release"
           fi
 
       - name: Get previous tag
@@ -98,7 +102,16 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: |
           set -euo pipefail
-          if [ -z "$(git tag --list)" ]; then
+          set +e
+          TAG_LIST_OUTPUT=$(git tag --list 2>&1)
+          TAG_LIST_RC=$?
+          set -e
+          if [ "$TAG_LIST_RC" -ne 0 ]; then
+            echo "::error::git tag --list failed unexpectedly:"
+            echo "$TAG_LIST_OUTPUT"
+            exit 1
+          fi
+          if [ -z "$TAG_LIST_OUTPUT" ]; then
             PREV_TAG=""
             echo "No previous tags (initial release)"
           else
@@ -147,12 +160,14 @@ jobs:
 
       - name: Create tag
         if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'

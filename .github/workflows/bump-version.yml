@@ -71,7 +71,6 @@ jobs:
           DATE=$(date +%Y-%m-%d)
 
           python3 - "$NEW_VERSION" "$DATE" "$BUMP_TYPE" <<'PYEOF'
-          import re
           import sys
 
           version, date, bump_type = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -83,6 +82,8 @@ jobs:
           marker = "## [Unreleased]"
           inserted = False
           if marker in content:
+              # Keep-a-Changelog flow: preserve the body currently authored
+              # under Unreleased and place the release heading above it.
               content = content.replace(marker, f"{marker}\n\n## [{version}] - {date}", 1)
               inserted = True
           else:

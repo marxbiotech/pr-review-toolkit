@@ -66,9 +66,13 @@ Use Method A when possible. If you must release manually, make the change in a P
 
 3. Verify all three versions match before committing:
    ```bash
-   A=$(jq -e -r '.version' .claude-plugin/plugin.json)
-   B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json)
-   C=$(jq -e -r '.version' .codex-plugin/plugin.json)
+   set -euo pipefail
+   A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
+     echo "Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
+   B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
+     echo "Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
+   C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
+     echo "Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
    if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
      echo "Version mismatch: A=$A B=$B C=$C"
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
