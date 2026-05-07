@@ -6,12 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 ## [2.0.0] - 2026-05-07
-
-### Changed
-
-- Version bump (major)
-
 
 ### Added
 
@@ -27,10 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update PR review skills to preserve multi-source metadata and use cache hash checks when writing
 - Extend validation and release workflows to check Codex marketplace metadata, plugin packaging, skill frontmatter, and cross-manifest versions
+- Major version bump (2.0.0)
 
 ### Breaking Changes
 
-The next release will be major (2.0.0) due to:
+This release is major due to:
 
 - **Comment metadata schema 1.0 → 1.1.** External consumers reading the `<!-- pr-review-metadata -->` block directly must migrate to the new `review_sources.{claude,gemini,codex}` shape. Legacy fields (`agents_run`, `gemini_integrated_ids`, `gemini_integration_date`) are still populated during the Phase-2 compatibility window; they will be removed in a future release.
 - **CAS contract enforced for cache writes.** `cache-write-comment.sh` now validates `--expected-content-hash` strictly (must be `sha256:` followed by 64 hex characters; empty rejected). Callers that previously omitted the flag still work, but anyone passing a malformed hash now fails with exit 2 instead of silently skipping protection.
@@ -113,7 +110,8 @@ The next release will be major (2.0.0) due to:
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.2...v2.0.0
 [1.4.2]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.3.1...v1.4.0
