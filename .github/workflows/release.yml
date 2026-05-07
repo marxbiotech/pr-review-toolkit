@@ -20,6 +20,7 @@ jobs:
 
       - name: Verify version parity
         run: |
+          set -euo pipefail
           A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
             echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
           B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
@@ -37,35 +38,53 @@ jobs:
 
       - name: Verify release artifacts
         run: |
-          for f in \
-            .claude-plugin/plugin.json \
-            .claude-plugin/marketplace.json \
-            .codex-plugin/plugin.json \
-            .agents/plugins/marketplace.json \
-            codex/skills/codex-review-pass/SKILL.md \
-            codex/skills/codex-fix-worker/SKILL.md; do
-            if [ ! -f "$f" ]; then
-              echo "::error::Release blocked: missing artifact $f at HEAD"
-              exit 1
-            fi
-          done
+          set -euo pipefail
           jq empty \
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
             .codex-plugin/plugin.json \
             .agents/plugins/marketplace.json
+
+          for f in \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            .codex-plugin/plugin.json \
+            .agents/plugins/marketplace.json; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Release blocked: missing artifact $f at HEAD"
+              exit 1
+            fi
+          done
+
+          # Keep in sync with validate.yml's Codex skill loop.
+          skill_count=0
+          for skill_dir in codex/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
+            skill_file="$skill_dir/SKILL.md"
+            if [ ! -f "$skill_file" ]; then
+              echo "::error::Release blocked: missing Codex skill $skill_file at HEAD"
+              exit 1
+            fi
+          done
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::Release blocked: no Codex skills found under codex/skills/"
+            exit 1
+          fi
           echo "✓ All release artifacts present and valid JSON"
 
       - name: Get version from plugin.json
         id: version
         run: |
-          VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          set -euo pipefail
+          VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
         id: check_tag
         run: |
+          set -euo pipefail
           if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Tag v${{ steps.version.outputs.version }} already exists, skipping release"
@@ -78,20 +97,12 @@ jobs:
         id: prev_tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          set +e
-          DESCRIBE_OUTPUT=$(git describe --tags --abbrev=0 2>&1)
-          DESCRIBE_RC=$?
-          set -e
-
-          if [ "$DESCRIBE_RC" -eq 0 ]; then
-            PREV_TAG="$DESCRIBE_OUTPUT"
-          elif echo "$DESCRIBE_OUTPUT" | grep -q "No names found"; then
+          set -euo pipefail
+          if [ -z "$(git tag --list)" ]; then
             PREV_TAG=""
             echo "No previous tags (initial release)"
           else
-            echo "::error::git describe failed unexpectedly (exit $DESCRIBE_RC):"
-            echo "$DESCRIBE_OUTPUT"
-            exit 1
+            PREV_TAG=$(git describe --tags --abbrev=0)
           fi
           echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
           echo "Previous tag: $PREV_TAG"
@@ -100,8 +111,9 @@ jobs:
         id: changelog
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          PREV_TAG="${{ steps.prev_tag.outputs.tag }}"
+          set -euo pipefail
+          VERSION="$VERSION_VALUE"
+          PREV_TAG="$PREV_TAG_VALUE"
 
           echo "## What's Changed in v$VERSION" > release_notes.md
           echo "" >> release_notes.md
@@ -129,10 +141,14 @@ jobs:
           echo "For Codex, this release includes a source plugin manifest at \`.codex-plugin/plugin.json\` with skills under \`codex/skills/\`." >> release_notes.md
 
           cat release_notes.md
+        env:
+          VERSION_VALUE: ${{ steps.version.outputs.version }}
+          PREV_TAG_VALUE: ${{ steps.prev_tag.outputs.tag }}
 
       - name: Create tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"

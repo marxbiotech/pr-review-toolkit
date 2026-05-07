@@ -51,6 +51,8 @@ The workflow will:
 
 ### Method B: Manual Release
 
+Use Method A when possible. If you must release manually, make the change in a PR unless you are deliberately performing an emergency direct push.
+
 1. Update versions in all plugin manifests:
    ```bash
    # Edit .claude-plugin/plugin.json
@@ -64,9 +66,9 @@ The workflow will:
 
 3. Verify all three versions match before committing:
    ```bash
-   A=$(jq -r '.version' .claude-plugin/plugin.json)
-   B=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
-   C=$(jq -r '.version' .codex-plugin/plugin.json)
+   A=$(jq -e -r '.version' .claude-plugin/plugin.json)
+   B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json)
+   C=$(jq -e -r '.version' .codex-plugin/plugin.json)
    if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
      echo "Version mismatch: A=$A B=$B C=$C"
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."

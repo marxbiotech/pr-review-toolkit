@@ -15,6 +15,7 @@ jobs:
 
       - name: Validate JSON syntax
         run: |
+          set -euo pipefail
           echo "Validating JSON files..."
           jq empty .claude-plugin/plugin.json
           jq empty .claude-plugin/marketplace.json
@@ -24,6 +25,7 @@ jobs:
 
       - name: Validate required files exist
         run: |
+          set -euo pipefail
           echo "Checking required files..."
           required_files=(
             ".claude-plugin/plugin.json"
@@ -45,6 +47,7 @@ jobs:
 
       - name: Validate semver format
         run: |
+          set -euo pipefail
           echo "Validating version format..."
           PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
             echo "::error::Failed to read .version from .claude-plugin/plugin.json"
@@ -82,6 +85,7 @@ jobs:
 
       - name: Validate version consistency
         run: |
+          set -euo pipefail
           echo "Checking version consistency..."
           PLUGIN_VERSION=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
             echo "::error::Failed to read .version from .claude-plugin/plugin.json"
@@ -118,6 +122,7 @@ jobs:
 
       - name: Validate plugin metadata
         run: |
+          set -euo pipefail
           echo "Validating plugin metadata..."
 
           # Check required fields in plugin.json
@@ -186,7 +191,14 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Claude marketplace parity: $MP_NAME"
+          if [ "$MP_DESC" != "$PLUGIN_DESC" ]; then
+            echo "::error::Claude marketplace description drift:"
+            echo "  plugin.json:      $PLUGIN_DESC"
+            echo "  marketplace.json: $MP_DESC"
+            exit 1
+          fi
+
+          echo "✓ Claude marketplace parity (name + description): $MP_NAME"
 
           if [ -z "$CODEX_PLUGIN_NAME" ] || [ "$CODEX_PLUGIN_NAME" = "null" ]; then
             echo "❌ Missing 'name' in .codex-plugin/plugin.json"
@@ -239,14 +251,16 @@ jobs:
 
       - name: Install yq
         run: |
+          set -euo pipefail
           if ! command -v yq >/dev/null 2>&1; then
-            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo wget --tries=3 --timeout=20 --retry-connrefused -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64
             sudo chmod +x /usr/local/bin/yq
           fi
           yq --version
 
       - name: Validate Codex skills
         run: |
+          set -euo pipefail
           echo "Validating Codex skill frontmatter..."
 
           skill_count=0
@@ -261,8 +275,13 @@ jobs:
               exit 1
             fi
 
-            # Extract YAML frontmatter (between first two --- lines)
-            fm=$(awk '/^---$/{c++; next} c==1{print} c==2{exit}' "$skill_file")
+            # Extract YAML frontmatter (between first two --- delimiter lines).
+            delim_count=$(grep -c '^---[[:space:]]*$' "$skill_file" || true)
+            if [ "$delim_count" -lt 2 ]; then
+              echo "::error::Expected at least two YAML frontmatter delimiters in $skill_file"
+              exit 1
+            fi
+            fm=$(awk '/^---[[:space:]]*$/{c++; next} c==1{print} c==2{exit}' "$skill_file")
             if [ -z "$fm" ]; then
               echo "::error::No YAML frontmatter in $skill_file"
               exit 1
@@ -294,3 +313,10 @@ jobs:
             exit 1
           fi
           echo "Validated $skill_count Codex skill(s)"
+
+      - name: Run shell test suites
+        run: |
+          set -euo pipefail
+          bash tests/cache-write-comment-cas-test.sh
+          bash tests/review-metadata-upgrade-test.sh
+          bash tests/review-metadata-replace-test.sh

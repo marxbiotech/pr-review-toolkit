@@ -56,7 +56,7 @@ This repository also includes a repo-scoped Codex marketplace at `.agents/plugin
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
 | **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
 
-Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex (consult your Codex version's docs for the exact syntax — `codex plugin marketplace add .` is the current recommendation but may change as the Codex CLI's plugin command surface is still evolving; see [Codex's plugin documentation](https://github.com/openai/codex#plugins) <!-- TODO: confirm canonical Codex plugin docs URL before final release --> or run `codex plugin --help` against your installed version). The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
+Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
 
 ```bash
 git clone https://github.com/marxbiotech/pr-review-toolkit.git
@@ -77,14 +77,14 @@ Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state co
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
-ACP approval matching is a literal prefix match against the command Codex executes. Because Codex skills invoke helpers via `${PR_REVIEW_TOOLKIT_ROOT}/scripts/...` (absolute paths derived from the toolkit-root env var), approval entries must match that exact form — not `./scripts/...`.
+ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your checkout — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`.
 
 ```text
-["$PR_REVIEW_TOOLKIT_ROOT/scripts/get-pr-number.sh"]
-["$PR_REVIEW_TOOLKIT_ROOT/scripts/cache-read-comment.sh"]
-["$PR_REVIEW_TOOLKIT_ROOT/scripts/cache-write-comment.sh"]
-["$PR_REVIEW_TOOLKIT_ROOT/scripts/review-metadata-upgrade.sh"]
-["$PR_REVIEW_TOOLKIT_ROOT/scripts/review-metadata-replace.sh"]
+["/path/to/pr-review-toolkit/scripts/get-pr-number.sh"]
+["/path/to/pr-review-toolkit/scripts/cache-read-comment.sh"]
+["/path/to/pr-review-toolkit/scripts/cache-write-comment.sh"]
+["/path/to/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
+["/path/to/pr-review-toolkit/scripts/review-metadata-replace.sh"]
 ["gh", "api"]
 ["gh", "pr"]
 ["git", "diff"]
