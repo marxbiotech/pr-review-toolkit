@@ -49,19 +49,19 @@ claude --plugin-dir /path/to/pr-review-toolkit
 
 ### Codex Plugin / Skills (From Source)
 
-This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin manifest at `.codex-plugin/plugin.json`, and Codex skill definitions under `codex/skills/`:
+This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin packaged under `plugins/pr-review-toolkit/` (with manifest at `plugins/pr-review-toolkit/.codex-plugin/plugin.json` and skill definitions under `plugins/pr-review-toolkit/codex/skills/`):
 
 | Skill | Description |
 |-------|-------------|
 | **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
 | **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
 
-Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at this repo root (`"./"`), and the manifest points Codex at `./codex/skills/`, so keep the repository layout intact:
+Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at the packaged plugin directory (`"./plugins/pr-review-toolkit"`), and the manifest there points Codex at `./codex/skills/` (relative to that plugin root), so keep the repository layout intact:
 
 ```bash
 git clone https://github.com/marxbiotech/pr-review-toolkit.git
 cd pr-review-toolkit
-jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
+jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json
 # Then register this directory as a local plugin marketplace using the
 # subcommand documented for your Codex version (currently expected to be
 # `codex plugin marketplace add .`).

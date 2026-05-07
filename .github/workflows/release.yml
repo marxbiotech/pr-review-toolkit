@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.claude-plugin/plugin.json'
-      - '.codex-plugin/plugin.json'
+      - 'plugins/pr-review-toolkit/.codex-plugin/plugin.json'
 
 jobs:
   release:
@@ -25,13 +25,13 @@ jobs:
             echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
           B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
-          C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+          C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
           if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
             echo "::error::Refusing to tag: version drift across manifests"
             echo "  .claude-plugin/plugin.json:        $A"
             echo "  .claude-plugin/marketplace.json:   $B"
-            echo "  .codex-plugin/plugin.json:         $C"
+            echo "  plugins/pr-review-toolkit/.codex-plugin/plugin.json:         $C"
             exit 1
           fi
           echo "✓ All three manifests at $A"
@@ -42,7 +42,7 @@ jobs:
           jq empty \
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
-            .codex-plugin/plugin.json \
+            plugins/pr-review-toolkit/.codex-plugin/plugin.json \
             .agents/plugins/marketplace.json
 
           # Keep this manifest list in sync with validate.yml's required_files
@@ -50,7 +50,7 @@ jobs:
           for f in \
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
-            .codex-plugin/plugin.json \
+            plugins/pr-review-toolkit/.codex-plugin/plugin.json \
             .agents/plugins/marketplace.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Release blocked: missing artifact $f at HEAD"
@@ -60,7 +60,7 @@ jobs:
 
           # Keep in sync with validate.yml's Codex skill loop.
           skill_count=0
-          for skill_dir in codex/skills/*; do
+          for skill_dir in plugins/pr-review-toolkit/codex/skills/*; do
             [ -d "$skill_dir" ] || continue
             skill_count=$((skill_count + 1))
             skill_file="$skill_dir/SKILL.md"
@@ -70,7 +70,7 @@ jobs:
             fi
           done
           if [ "$skill_count" -eq 0 ]; then
-            echo "::error::Release blocked: no Codex skills found under codex/skills/"
+            echo "::error::Release blocked: no Codex skills found under plugins/pr-review-toolkit/codex/skills/"
             exit 1
           fi
           echo "✓ All release artifacts present and valid JSON"
@@ -163,7 +163,7 @@ jobs:
           echo "/plugin install pr-review-toolkit" >> release_notes.md
           echo '```' >> release_notes.md
           echo "" >> release_notes.md
-          echo "For Codex, this release includes a source plugin manifest at \`.codex-plugin/plugin.json\` with skills under \`codex/skills/\`." >> release_notes.md
+          echo "For Codex, this release includes a source plugin manifest at \`plugins/pr-review-toolkit/.codex-plugin/plugin.json\` with skills under \`plugins/pr-review-toolkit/codex/skills/\`." >> release_notes.md
 
           cat release_notes.md
         env:

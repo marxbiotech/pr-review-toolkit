@@ -19,7 +19,7 @@ jobs:
           echo "Validating JSON files..."
           jq empty .claude-plugin/plugin.json
           jq empty .claude-plugin/marketplace.json
-          jq empty .codex-plugin/plugin.json
+          jq empty plugins/pr-review-toolkit/.codex-plugin/plugin.json
           jq empty .agents/plugins/marketplace.json
           echo "✅ JSON syntax is valid"
 
@@ -28,13 +28,13 @@ jobs:
           set -euo pipefail
           echo "Checking required files..."
           # Hardcoded list of stable required files (manifests + repo conventions).
-          # Codex skill files (codex/skills/*/SKILL.md) are validated dynamically
+          # Codex skill files (plugins/pr-review-toolkit/codex/skills/*/SKILL.md) are validated dynamically
           # in the later "Validate Codex skills" step — adding a new skill does
           # not require updating this list.
           required_files=(
             ".claude-plugin/plugin.json"
             ".claude-plugin/marketplace.json"
-            ".codex-plugin/plugin.json"
+            "plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             ".agents/plugins/marketplace.json"
             "README.md"
             "LICENSE"
@@ -59,8 +59,8 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
             exit 1
           }
-          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
 
@@ -80,10 +80,10 @@ jobs:
           echo "✅ marketplace.json plugins[0].version: $MARKETPLACE_PLUGIN_VERSION"
 
           if [[ ! "$CODEX_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "❌ Invalid semver in .codex-plugin/plugin.json: $CODEX_PLUGIN_VERSION"
+            echo "❌ Invalid semver in plugins/pr-review-toolkit/.codex-plugin/plugin.json: $CODEX_PLUGIN_VERSION"
             exit 1
           fi
-          echo "✅ .codex-plugin/plugin.json version: $CODEX_PLUGIN_VERSION"
+          echo "✅ plugins/pr-review-toolkit/.codex-plugin/plugin.json version: $CODEX_PLUGIN_VERSION"
 
       - name: Validate version consistency
         run: |
@@ -97,8 +97,8 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"
             exit 1
           }
-          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .version from .codex-plugin/plugin.json"
+          CODEX_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
 
@@ -114,7 +114,7 @@ jobs:
           if [ "$PLUGIN_VERSION" != "$CODEX_PLUGIN_VERSION" ]; then
             echo "❌ Version mismatch!"
             echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
-            echo "   .codex-plugin/plugin.json:  $CODEX_PLUGIN_VERSION"
+            echo "   plugins/pr-review-toolkit/.codex-plugin/plugin.json:  $CODEX_PLUGIN_VERSION"
             echo ""
             echo "Claude and Codex plugin manifests must ship the same plugin version."
             exit 1
@@ -144,16 +144,16 @@ jobs:
             echo "::error::Failed to read .plugins[0].description from .claude-plugin/marketplace.json"
             exit 1
           }
-          CODEX_PLUGIN_NAME=$(jq -e -r '.name' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .name from .codex-plugin/plugin.json"
+          CODEX_PLUGIN_NAME=$(jq -e -r '.name' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
-          CODEX_PLUGIN_DESC=$(jq -e -r '.description' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .description from .codex-plugin/plugin.json"
+          CODEX_PLUGIN_DESC=$(jq -e -r '.description' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
-          CODEX_SKILLS_PATH=$(jq -e -r '.skills' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .skills from .codex-plugin/plugin.json"
+          CODEX_SKILLS_PATH=$(jq -e -r '.skills' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .skills from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
           CODEX_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .agents/plugins/marketplace.json) || {
@@ -203,34 +203,34 @@ jobs:
           echo "✓ Claude marketplace parity (name + description): $MP_NAME"
 
           if [ -z "$CODEX_PLUGIN_NAME" ] || [ "$CODEX_PLUGIN_NAME" = "null" ]; then
-            echo "❌ Missing 'name' in .codex-plugin/plugin.json"
+            echo "❌ Missing 'name' in plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           fi
 
           if [ -z "$CODEX_PLUGIN_DESC" ] || [ "$CODEX_PLUGIN_DESC" = "null" ]; then
-            echo "❌ Missing 'description' in .codex-plugin/plugin.json"
+            echo "❌ Missing 'description' in plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           fi
 
           if [ "$CODEX_SKILLS_PATH" != "./codex/skills/" ]; then
-            echo "❌ .codex-plugin/plugin.json skills path must be ./codex/skills/, got: $CODEX_SKILLS_PATH"
+            echo "❌ plugins/pr-review-toolkit/.codex-plugin/plugin.json skills path must be ./codex/skills/, got: $CODEX_SKILLS_PATH"
             exit 1
           fi
 
-          if [ ! -d "${CODEX_SKILLS_PATH#./}" ]; then
+          if [ ! -d "plugins/pr-review-toolkit/${CODEX_SKILLS_PATH#./}" ]; then
             echo "❌ Codex skills path does not exist: $CODEX_SKILLS_PATH"
             exit 1
           fi
 
           if [ "$CODEX_MARKETPLACE_NAME" != "$CODEX_PLUGIN_NAME" ]; then
-            echo "❌ Codex marketplace plugin name must match .codex-plugin/plugin.json name"
+            echo "❌ Codex marketplace plugin name must match plugins/pr-review-toolkit/.codex-plugin/plugin.json name"
             echo "   marketplace: $CODEX_MARKETPLACE_NAME"
             echo "   plugin.json: $CODEX_PLUGIN_NAME"
             exit 1
           fi
 
-          if [ "$CODEX_MARKETPLACE_PATH" != "./" ]; then
-            echo "❌ Codex marketplace source.path must point at this repo plugin root, got: $CODEX_MARKETPLACE_PATH"
+          if [ "$CODEX_MARKETPLACE_PATH" != "./plugins/pr-review-toolkit" ]; then
+            echo "❌ Codex marketplace source.path must point at ./plugins/pr-review-toolkit, got: $CODEX_MARKETPLACE_PATH"
             exit 1
           fi
 
@@ -285,7 +285,7 @@ jobs:
           echo "Validating Codex skill frontmatter..."
 
           skill_count=0
-          for skill_dir in codex/skills/*; do
+          for skill_dir in plugins/pr-review-toolkit/codex/skills/*; do
             [ -d "$skill_dir" ] || continue
             skill_count=$((skill_count + 1))
             skill_name=$(basename "$skill_dir")
@@ -335,7 +335,7 @@ jobs:
           done
 
           if [ "$skill_count" -eq 0 ]; then
-            echo "::error::No Codex skills found under codex/skills/"
+            echo "::error::No Codex skills found under plugins/pr-review-toolkit/codex/skills/"
             exit 1
           fi
           echo "Validated $skill_count Codex skill(s)"
