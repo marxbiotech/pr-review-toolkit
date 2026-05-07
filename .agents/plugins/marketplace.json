@@ -8,7 +8,7 @@
       "name": "pr-review-toolkit",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./plugins/pr-review-toolkit"
       },
       "policy": {
         "installation": "AVAILABLE",

@@ -9,10 +9,10 @@ This document describes how to release new versions of the pr-review-toolkit plu
 | `.claude-plugin/plugin.json` | `version` | **Plugin version (authoritative source)** |
 | `.claude-plugin/marketplace.json` | `plugins[0].version` | Plugin version (must match plugin.json) |
 | `.claude-plugin/marketplace.json` | `metadata.version` | Marketplace format version (not plugin version, keep at 1.0.0) |
-| `.codex-plugin/plugin.json` | `version` | Codex plugin version (must match plugin.json) |
-| `.agents/plugins/marketplace.json` | `plugins[0].source.path` | Repo-scoped Codex marketplace entry (keep as `./`) |
+| `plugins/pr-review-toolkit/.codex-plugin/plugin.json` | `version` | Codex plugin version (must match plugin.json) |
+| `.agents/plugins/marketplace.json` | `plugins[0].source.path` | Repo-scoped Codex marketplace entry (keep as `./plugins/pr-review-toolkit`) |
 
-> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, and `.codex-plugin/plugin.json` must always use the same plugin version.
+> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, and `plugins/pr-review-toolkit/.codex-plugin/plugin.json` must always use the same plugin version.
 
 > **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. Both ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
 
@@ -44,7 +44,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 3. Click **Run workflow**
 
 The workflow will:
-- Update version in `plugin.json`, `marketplace.json`, and `.codex-plugin/plugin.json`
+- Update version in `plugin.json`, `marketplace.json`, and `plugins/pr-review-toolkit/.codex-plugin/plugin.json`
 - Update `CHANGELOG.md`
 - Commit and push to main
 - Trigger the release workflow automatically
@@ -57,7 +57,7 @@ Use Method A when possible. If you must release manually, make the change in a P
    ```bash
    # Edit .claude-plugin/plugin.json
    # Edit .claude-plugin/marketplace.json (plugins[0].version only)
-   # Edit .codex-plugin/plugin.json
+   # Edit plugins/pr-review-toolkit/.codex-plugin/plugin.json
    ```
 
 2. Update `CHANGELOG.md`:
@@ -71,8 +71,8 @@ Use Method A when possible. If you must release manually, make the change in a P
      echo "Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
    B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
      echo "Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
-   C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
-     echo "Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+   C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+     echo "Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
    if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
      echo "Version mismatch: A=$A B=$B C=$C"
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
@@ -85,7 +85,7 @@ Use Method A when possible. If you must release manually, make the change in a P
 
 4. Commit and push:
    ```bash
-   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
+   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
    git push
    ```
@@ -138,7 +138,7 @@ Manually triggered workflow:
 Update all plugin manifests to have matching versions:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
-- `.codex-plugin/plugin.json` → `version`
+- `plugins/pr-review-toolkit/.codex-plugin/plugin.json` → `version`
 
 ### Manual tag creation
 
@@ -163,7 +163,7 @@ After a release:
 3. Verify the plugin loads correctly in Claude Code
 4. Verify the Codex manifest and skill path:
    ```bash
-   jq empty .agents/plugins/marketplace.json .codex-plugin/plugin.json
-   test "$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)" = "./"
-   test "$(jq -r '.skills' .codex-plugin/plugin.json)" = "./codex/skills/"
+   jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json
+   test "$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)" = "./plugins/pr-review-toolkit"
+   test "$(jq -r '.skills' plugins/pr-review-toolkit/.codex-plugin/plugin.json)" = "./codex/skills/"
    ```

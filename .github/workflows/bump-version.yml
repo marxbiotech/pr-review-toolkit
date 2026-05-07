@@ -54,7 +54,7 @@ jobs:
           for spec in \
             ".claude-plugin/plugin.json:.version" \
             ".claude-plugin/marketplace.json:.plugins[0].version" \
-            ".codex-plugin/plugin.json:.version"; do
+            "plugins/pr-review-toolkit/.codex-plugin/plugin.json:.version"; do
             file="${spec%%:*}"
             path="${spec#*:}"
             tmp=$(mktemp)
@@ -120,8 +120,8 @@ jobs:
             echo "::error::Failed to read .version from .claude-plugin/plugin.json"; exit 1; }
           B=$(jq -e -r '.plugins[0].version' .claude-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
-          C=$(jq -e -r '.version' .codex-plugin/plugin.json) || {
-            echo "::error::Failed to read .version from .codex-plugin/plugin.json"; exit 1; }
+          C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
           if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ]; then
             echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C"
             exit 1
@@ -136,7 +136,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json CHANGELOG.md
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json CHANGELOG.md
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
 

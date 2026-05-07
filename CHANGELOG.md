@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Codex marketplace entry no longer skipped by `/plugins`. The marketplace `source.path` was `./` (the repo root), which Codex normalized to an empty local plugin path and rejected with `local plugin source path must not be empty`. The Codex plugin is now packaged under `plugins/pr-review-toolkit/` (manifest at `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, skills at `plugins/pr-review-toolkit/codex/skills/`), and `.agents/plugins/marketplace.json` points at `./plugins/pr-review-toolkit` so Codex resolves a concrete plugin folder. The Claude marketplace (`.claude-plugin/marketplace.json` with `source: "./"`) is unchanged. Fixes #11.
+
 ## [2.0.0] - 2026-05-07
 
 ### Added
