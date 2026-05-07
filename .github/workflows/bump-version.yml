@@ -74,7 +74,7 @@ jobs:
           import sys
 
           version, date, bump_type = sys.argv[1], sys.argv[2], sys.argv[3]
-          entry = f"\n## [{version}] - {date}\n\n### Changed\n\n- Version bump ({bump_type})\n"
+          body = f"\n## [{version}] - {date}\n\n### Changed\n\n- Version bump ({bump_type})\n"
 
           with open("CHANGELOG.md", "r") as f:
               content = f.read()
@@ -82,15 +82,19 @@ jobs:
           marker = "## [Unreleased]"
           inserted = False
           if marker in content:
-              # Keep-a-Changelog flow: preserve the body currently authored
-              # under Unreleased and place the release heading above it.
-              content = content.replace(marker, f"{marker}\n\n## [{version}] - {date}", 1)
+              # Insert the new release section immediately BELOW the [Unreleased]
+              # marker. The marker itself stays at the top so subsequent bumps
+              # find it again. The body includes a stub "Version bump (TYPE)"
+              # entry under ### Changed; if the user authored richer release
+              # notes under [Unreleased], they will sit in their original
+              # location below the new release section.
+              content = content.replace(marker, f"{marker}{body}", 1)
               inserted = True
           else:
               lines = content.split("\n")
               for i, line in enumerate(lines):
                   if line.startswith("## ["):
-                      lines.insert(i, entry)
+                      lines.insert(i, body)
                       inserted = True
                       break
               content = "\n".join(lines)

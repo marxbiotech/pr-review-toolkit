@@ -115,7 +115,19 @@ jobs:
             PREV_TAG=""
             echo "No previous tags (initial release)"
           else
-            PREV_TAG=$(git describe --tags --abbrev=0)
+            # git tag --list shows tags exist; git describe may still fail if no
+            # tag is reachable from HEAD (e.g., orphan branch, hotfix branch
+            # forked before the only tag, etc.). Fall back to empty PREV_TAG so
+            # the release notes degrade gracefully to "initial release" framing
+            # instead of aborting the entire workflow.
+            set +e
+            PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+            DESCRIBE_RC=$?
+            set -e
+            if [ "$DESCRIBE_RC" -ne 0 ]; then
+              echo "::warning::git describe found no tag reachable from HEAD; falling back to initial-release framing"
+              PREV_TAG=""
+            fi
           fi
           echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
           echo "Previous tag: $PREV_TAG"
