@@ -1,5 +1,5 @@
 name: 'Check script parity between scripts/ and plugins/pr-review-toolkit/scripts/'
-description: 'Asserts the two helper-script trees are byte-identical and git-index-mode-identical.'
+description: 'Asserts the two helper-script trees (scripts/ and plugins/pr-review-toolkit/scripts/) are byte-identical and git-index-mode-identical. Must be invoked from the repo root (i.e. after actions/checkout, with cwd at $GITHUB_WORKSPACE).'
 
 inputs:
   error-prefix:
@@ -12,9 +12,11 @@ runs:
   steps:
     - name: Content drift
       shell: bash
+      env:
+        ERROR_PREFIX: ${{ inputs.error-prefix }}
       run: |
         set -euo pipefail
-        prefix='${{ inputs.error-prefix }}'
+        prefix="$ERROR_PREFIX"
         echo "Validating script-tree content drift (bidirectional)..."
         if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
           echo "::error::${prefix}Codex packaged scripts drifted from root scripts/ (extras, missing, or content differ)"
@@ -27,9 +29,11 @@ runs:
 
     - name: Git index modes
       shell: bash
+      env:
+        ERROR_PREFIX: ${{ inputs.error-prefix }}
       run: |
         set -euo pipefail
-        prefix='${{ inputs.error-prefix }}'
+        prefix="$ERROR_PREFIX"
         echo "Comparing git index modes between scripts/ and plugins/pr-review-toolkit/scripts/..."
         [ -d scripts ] || { echo "::error::${prefix}scripts/ directory missing"; exit 1; }
         [ -d plugins/pr-review-toolkit/scripts ] || { echo "::error::${prefix}plugins/pr-review-toolkit/scripts/ directory missing"; exit 1; }

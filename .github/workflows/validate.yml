@@ -286,12 +286,21 @@ jobs:
           files=(scripts/*.sh scripts/lib/*.sh \
                  plugins/pr-review-toolkit/scripts/*.sh \
                  plugins/pr-review-toolkit/scripts/lib/*.sh)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No shell scripts found to check banners on"
+            exit 1
+          fi
+          # The duplication banner must appear in the first 8 lines of each script.
+          # If you add a license header or other prefix lines, extend the head -N limit below.
           fail=0
           for f in "${files[@]}"; do
             base="${f#scripts/}"
             base="${base#plugins/pr-review-toolkit/scripts/}"
             # Banner should mention both authoritative and packaged paths for this file.
-            if ! head -8 "$f" | grep -qF "scripts/${base}"; then
+            # Anchor the authoritative-path grep so it cannot match as a substring of the
+            # packaged path `plugins/pr-review-toolkit/scripts/${base}`.
+            escaped_base="${base//./\\.}"
+            if ! head -8 "$f" | grep -qE "(^|[^/])scripts/${escaped_base}([[:space:]]|$)"; then
               echo "::error::$f banner is missing the 'scripts/${base}' path reference"
               fail=1
             fi

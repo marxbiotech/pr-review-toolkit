@@ -14,17 +14,17 @@ Use `.pr-review-cache/pr-#.json` as the only PR review state file. Do not create
 Find the toolkit root in this order:
 
 1. Use `PR_REVIEW_TOOLKIT_ROOT` when set. This is the supported path.
-2. If `PR_REVIEW_TOOLKIT_ROOT` is unset, derive the packaged plugin root from the skill path. This SKILL.md lives at `<root>/codex/skills/<skill-name>/SKILL.md`, so `<root>` is exactly three levels up. Substitute `$SKILL_PATH` with the absolute path of this SKILL.md (the Codex runtime usually exposes this; if not, ask the dev agent for it before running the snippet):
+2. If `PR_REVIEW_TOOLKIT_ROOT` is unset, derive the packaged plugin root from the skill path. This SKILL.md lives at `<root>/codex/skills/<skill-name>/SKILL.md`, so `<root>` is exactly three levels up. Ensure `SKILL_PATH` is set in the environment to the absolute path of this SKILL.md before running the snippet (the Codex runtime usually exports this; if not, ask the dev agent to set it):
 
    ```bash
    : "${SKILL_PATH:?SKILL_PATH must be set to the absolute path of this SKILL.md}"
    PR_REVIEW_TOOLKIT_ROOT="$(cd "$(dirname "$SKILL_PATH")/../../.." && pwd)"
    ```
 
-   Then verify both `<root>/.codex-plugin/plugin.json` and `<root>/scripts/cache-write-comment.sh` exist (sentinels for "we landed at a packaged plugin root, not an arbitrary ancestor"; the first is the Codex marketplace manifest path, the second is the most-referenced helper — if either is renamed in the future, update this list). If either is missing, treat the derivation as failed and proceed to step 3.
+   Then verify both `<root>/.codex-plugin/plugin.json` and `<root>/scripts/cache-write-comment.sh` exist (sentinels for "we landed at a packaged plugin root, not an arbitrary ancestor"; the first is the Codex plugin manifest that the marketplace resolver requires at a packaged plugin root, the second is the most-referenced helper — if either is renamed in the future, update this list). If either is missing, treat the derivation as failed and proceed to step 3.
 3. Stop and ask the dev agent for `PR_REVIEW_TOOLKIT_ROOT`.
 
-After resolving the root via step 1 or 2, canonicalize it to an absolute path so helpers that `cd` before invoking siblings cannot break:
+After resolving the root via step 1 or 2, canonicalize it to an absolute path so that any subsequent `cd` in the calling workflow (or in scripts that consume `$PR_REVIEW_TOOLKIT_ROOT` and `cd` afterwards) cannot invalidate it:
 
 ```bash
 PR_REVIEW_TOOLKIT_ROOT="$(cd "$PR_REVIEW_TOOLKIT_ROOT" && pwd)"
