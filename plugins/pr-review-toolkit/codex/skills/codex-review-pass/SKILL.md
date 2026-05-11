@@ -13,9 +13,22 @@ Use `.pr-review-cache/pr-#.json` as the only PR review state file. Do not create
 
 Find the toolkit root in this order:
 
-1. Use `PR_REVIEW_TOOLKIT_ROOT` when set.
-2. If this skill is installed inside the toolkit repo, derive the root from the skill path.
+1. Use `PR_REVIEW_TOOLKIT_ROOT` when set. This is the supported path.
+2. If `PR_REVIEW_TOOLKIT_ROOT` is unset, derive the packaged plugin root from the skill path. This SKILL.md lives at `<root>/codex/skills/<skill-name>/SKILL.md`, so `<root>` is exactly three levels up. Ensure `SKILL_PATH` is set in the environment to the absolute path of this SKILL.md before running the snippet (the Codex runtime usually exports this; if not, ask the dev agent to set it):
+
+   ```bash
+   : "${SKILL_PATH:?SKILL_PATH must be set to the absolute path of this SKILL.md}"
+   PR_REVIEW_TOOLKIT_ROOT="$(cd "$(dirname "$SKILL_PATH")/../../.." && pwd)"
+   ```
+
+   Then verify both `<root>/.codex-plugin/plugin.json` and `<root>/scripts/cache-write-comment.sh` exist (sentinels for "we landed at a packaged plugin root, not an arbitrary ancestor"; the first is the Codex plugin manifest that the marketplace resolver requires at a packaged plugin root, the second is the most-referenced helper — if either is renamed in the future, update this list). If either is missing, treat the derivation as failed and proceed to step 3.
 3. Stop and ask the dev agent for `PR_REVIEW_TOOLKIT_ROOT`.
+
+After resolving the root via step 1 or 2, canonicalize it to an absolute path so that any subsequent `cd` in the calling workflow (or in scripts that consume `$PR_REVIEW_TOOLKIT_ROOT` and `cd` afterwards) cannot invalidate it:
+
+```bash
+PR_REVIEW_TOOLKIT_ROOT="$(cd "$PR_REVIEW_TOOLKIT_ROOT" && pwd)"
+```
 
 Use only these scripts for review state:
 
@@ -25,6 +38,31 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
+```
+
+Before running the workflow, verify the helper scripts are available:
+
+```bash
+: "${PR_REVIEW_TOOLKIT_ROOT:?Set PR_REVIEW_TOOLKIT_ROOT to the pr-review-toolkit plugin root}"
+
+for helper in \
+  get-pr-number.sh \
+  cache-read-comment.sh \
+  cache-write-comment.sh \
+  review-metadata-upgrade.sh \
+  review-metadata-replace.sh; do
+  if [ ! -x "${PR_REVIEW_TOOLKIT_ROOT}/scripts/${helper}" ]; then
+    echo "Missing executable helper: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/${helper}" >&2
+    echo "Hint: PR_REVIEW_TOOLKIT_ROOT must point at the packaged plugin root" >&2
+    echo "      (e.g. <repo>/plugins/pr-review-toolkit), not the repo root." >&2
+    exit 2
+  fi
+done
+if [ ! -r "${PR_REVIEW_TOOLKIT_ROOT}/scripts/lib/common.sh" ]; then
+  echo "Missing readable shared library: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/lib/common.sh" >&2
+  echo "(The cache and PR-number helpers above source this file; the metadata helpers do not, but it ships in the package and we treat its absence as a packaging failure.)" >&2
+  exit 2
+fi
 ```
 
 ## Workflow

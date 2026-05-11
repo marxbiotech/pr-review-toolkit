@@ -49,7 +49,7 @@ claude --plugin-dir /path/to/pr-review-toolkit
 
 ### Codex Plugin / Skills (From Source)
 
-This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin packaged under `plugins/pr-review-toolkit/` (with manifest at `plugins/pr-review-toolkit/.codex-plugin/plugin.json` and skill definitions under `plugins/pr-review-toolkit/codex/skills/`):
+This repository also includes a repo-scoped Codex marketplace at `.agents/plugins/marketplace.json`, a Codex plugin packaged under `plugins/pr-review-toolkit/` (with manifest at `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, skill definitions under `plugins/pr-review-toolkit/codex/skills/`, and the helper scripts under `plugins/pr-review-toolkit/scripts/`):
 
 | Skill | Description |
 |-------|-------------|
@@ -67,24 +67,24 @@ jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugi
 # `codex plugin marketplace add .`).
 ```
 
-Set the toolkit root for Codex sessions that run these skills:
+Set the toolkit root for Codex sessions that run these skills. For source installs, point it at the packaged plugin root:
 
 ```bash
-export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
+export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
-Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
+Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers.
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
-ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your checkout — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`. Replace `/path/to/pr-review-toolkit` below with the absolute path of your local checkout, for example the output of `realpath .` from the repository root.
+ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your packaged plugin root — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not a relative path like `./plugins/pr-review-toolkit/scripts/...`. Replace `/path/to/pr-review-toolkit/plugins/pr-review-toolkit` below with the absolute packaged plugin path.
 
 ```text
-["/path/to/pr-review-toolkit/scripts/get-pr-number.sh"]
-["/path/to/pr-review-toolkit/scripts/cache-read-comment.sh"]
-["/path/to/pr-review-toolkit/scripts/cache-write-comment.sh"]
-["/path/to/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
-["/path/to/pr-review-toolkit/scripts/review-metadata-replace.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/get-pr-number.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-read-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-write-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-replace.sh"]
 ["gh", "api"]
 ["gh", "pr"]
 ["git", "diff"]

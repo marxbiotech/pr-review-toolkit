@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- Package the shared helper scripts under `plugins/pr-review-toolkit/scripts/` so installed Codex skills can execute their required `PR_REVIEW_TOOLKIT_ROOT/scripts/*` helpers without depending on a separate Claude plugin bundle. Previously, Codex installs aborted at preflight with `Missing executable helper: …/scripts/<helper>.sh` because the packaged plugin shipped only manifests and skill files. Fixes #14.
+
 ## [2.0.1] - 2026-05-07
 
 ### Changed

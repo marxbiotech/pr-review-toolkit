@@ -1,0 +1,57 @@
+name: 'Check script parity between scripts/ and plugins/pr-review-toolkit/scripts/'
+description: 'Asserts the two helper-script trees (scripts/ and plugins/pr-review-toolkit/scripts/) are byte-identical and git-index-mode-identical. Must be invoked from the repo root (i.e. after actions/checkout, with cwd at $GITHUB_WORKSPACE).'
+
+inputs:
+  error-prefix:
+    description: 'Prefix to prepend to error messages (e.g. "Release blocked: " in release.yml).'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Content drift
+      shell: bash
+      env:
+        ERROR_PREFIX: ${{ inputs.error-prefix }}
+      run: |
+        set -euo pipefail
+        prefix="$ERROR_PREFIX"
+        echo "Validating script-tree content drift (bidirectional)..."
+        if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
+          echo "::error::${prefix}Codex packaged scripts drifted from root scripts/ (extras, missing, or content differ)"
+          { diff -ru scripts/ plugins/pr-review-toolkit/scripts/ || true; } | head -40
+          echo "Run: rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/"
+          echo "See AGENTS.md ('Authoritative vs. packaged scripts') for the contract."
+          exit 1
+        fi
+        echo "✅ scripts/ and plugins/pr-review-toolkit/scripts/ are identical (content)"
+
+    - name: Git index modes
+      shell: bash
+      env:
+        ERROR_PREFIX: ${{ inputs.error-prefix }}
+      run: |
+        set -euo pipefail
+        prefix="$ERROR_PREFIX"
+        echo "Comparing git index modes between scripts/ and plugins/pr-review-toolkit/scripts/..."
+        [ -d scripts ] || { echo "::error::${prefix}scripts/ directory missing"; exit 1; }
+        [ -d plugins/pr-review-toolkit/scripts ] || { echo "::error::${prefix}plugins/pr-review-toolkit/scripts/ directory missing"; exit 1; }
+        root_modes=$(git ls-files --stage scripts/ \
+          | awk '{print $1, $4}' \
+          | sed 's| scripts/| |' \
+          | sort)
+        pkg_modes=$(git ls-files --stage plugins/pr-review-toolkit/scripts/ \
+          | awk '{print $1, $4}' \
+          | sed 's| plugins/pr-review-toolkit/scripts/| |' \
+          | sort)
+        if [ -z "$root_modes" ] || [ -z "$pkg_modes" ]; then
+          echo "::error::${prefix}One of the scripts/ trees is empty or untracked"
+          exit 1
+        fi
+        if ! diff <(echo "$root_modes") <(echo "$pkg_modes") >/dev/null; then
+          echo "::error::${prefix}Git index modes differ between scripts/ trees (e.g. exec-bit drift)"
+          diff <(echo "$root_modes") <(echo "$pkg_modes") || true
+          exit 1
+        fi
+        echo "✅ Git index modes match across both script trees"

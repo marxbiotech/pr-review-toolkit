@@ -23,7 +23,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT_DIR/scripts/review-metadata-upgrade.sh"
+SCRIPT_DIR="${SCRIPT_DIR:-$ROOT_DIR/scripts}"
+SCRIPT="$SCRIPT_DIR/review-metadata-upgrade.sh"
 FIXTURES="$ROOT_DIR/tests/fixtures"
 
 assert_jq() {

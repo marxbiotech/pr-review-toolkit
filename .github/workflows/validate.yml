@@ -47,6 +47,31 @@ jobs:
             echo "✅ Found: $file"
           done
 
+      - name: Syntax-check shell scripts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(
+            scripts/*.sh
+            scripts/lib/*.sh
+            plugins/pr-review-toolkit/scripts/*.sh
+            plugins/pr-review-toolkit/scripts/lib/*.sh
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No shell scripts found to syntax-check"
+            exit 1
+          fi
+          echo "Syntax-checking ${#files[@]} shell scripts..."
+          fail=0
+          for f in "${files[@]}"; do
+            if ! bash -n "$f"; then
+              echo "::error::Syntax error in $f"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "✅ All ${#files[@]} shell scripts pass bash -n"
+
       - name: Validate semver format
         run: |
           set -euo pipefail
@@ -251,6 +276,47 @@ jobs:
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
 
+      - name: Check script parity
+        uses: ./.github/actions/check-script-parity
+
+      - name: Verify duplication banner mentions both tree paths
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(scripts/*.sh scripts/lib/*.sh \
+                 plugins/pr-review-toolkit/scripts/*.sh \
+                 plugins/pr-review-toolkit/scripts/lib/*.sh)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No shell scripts found to check banners on"
+            exit 1
+          fi
+          # The duplication banner must appear in the first 8 lines of each script.
+          # If you add a license header or other prefix lines, extend the head -N limit below.
+          fail=0
+          for f in "${files[@]}"; do
+            base="${f#scripts/}"
+            base="${base#plugins/pr-review-toolkit/scripts/}"
+            # Banner should mention both authoritative and packaged paths for this file.
+            # Anchor the authoritative-path grep so it cannot match as a substring of the
+            # packaged path `plugins/pr-review-toolkit/scripts/${base}`.
+            # Design Decision: only `.` needs escaping for the current filename corpus
+            # (all helpers match `[a-z][a-z-]*\.sh`). If a future helper adds ERE
+            # metachars like `[`, `]`, `*`, `?`, `+`, `(`, `)`, `|`, `^`, `$`, `\`,
+            # `{`, or `}` to its filename, widen this escape (e.g. via
+            # `sed 's/[][\\.*^$/(){}?+|]/\\&/g'`) or pin the filename charset upfront.
+            escaped_base="${base//./\\.}"
+            if ! head -8 "$f" | grep -qE "(^|[^/])scripts/${escaped_base}([[:space:]]|$)"; then
+              echo "::error::$f banner is missing the 'scripts/${base}' path reference"
+              fail=1
+            fi
+            if ! head -8 "$f" | grep -qF "plugins/pr-review-toolkit/scripts/${base}"; then
+              echo "::error::$f banner is missing the 'plugins/pr-review-toolkit/scripts/${base}' path reference"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "✅ All ${#files[@]} banners reference both authoritative and packaged paths"
+
       - name: Install yq
         run: |
           set -euo pipefail
@@ -353,7 +419,12 @@ jobs:
             echo "::error::No shell test suites found under tests/*-test.sh"
             exit 1
           fi
-          for t in "${test_files[@]}"; do
-            echo "▶ Running $t"
-            bash "$t"
+          # Run each test against BOTH script trees so the packaging contract is
+          # exercised end-to-end (not just byte-equality from the drift check).
+          for tree in "scripts" "plugins/pr-review-toolkit/scripts"; do
+            echo "═══ Running tests with SCRIPT_DIR=$tree ═══"
+            for t in "${test_files[@]}"; do
+              echo "▶ $t"
+              SCRIPT_DIR="$PWD/$tree" bash "$t"
+            done
           done
