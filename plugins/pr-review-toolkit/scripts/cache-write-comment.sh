@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/cache-write-comment.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/cache-write-comment.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Write PR review comment with local cache support
 # Updates local cache and optionally syncs to GitHub
 #

@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/fetch-gemini-comments.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/fetch-gemini-comments.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Fetch Gemini Code Assist review comments from a PR
 # Returns JSON array with parsed comment information
 #

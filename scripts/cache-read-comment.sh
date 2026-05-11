@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/cache-read-comment.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/cache-read-comment.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Read PR review comment with local cache support
 # Checks local cache first, falls back to GitHub API if cache miss
 #

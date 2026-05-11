@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/review-metadata-upgrade.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/review-metadata-upgrade.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Upgrade pr-review metadata JSON embedded in a review comment to schema 1.1.
 #
 # Usage:

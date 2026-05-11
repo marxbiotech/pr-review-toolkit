@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/cache-sync.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/cache-sync.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Force sync local cache with GitHub
 # Wrapper around cache-read-comment.sh --force-refresh with detailed output
 #

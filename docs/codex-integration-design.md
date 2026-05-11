@@ -163,13 +163,13 @@ review-metadata-replace.sh --stdin --metadata-file <metadata-json-file>
 Codex skills 需要知道 toolkit root。建議約定：
 
 ```text
-PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit
+PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
 解析順序：
 
-1. 若環境變數 `PR_REVIEW_TOOLKIT_ROOT` 存在，使用它。
-2. 若 Codex packaging 提供 wrapper script，wrapper 以自身相對路徑解析 repo root。
+1. 若環境變數 `PR_REVIEW_TOOLKIT_ROOT` 存在，使用它。指向 packaged plugin root（上例）是支援的 runtime 設定；指向 repo root（`/path/to/pr-review-toolkit`）僅為 source-tree 開發便利，並非支援配置。
+2. 若 Codex packaging 提供 wrapper script，wrapper 以自身相對路徑解析 packaged plugin root。
 3. 若都不存在，停止並要求 dev agent 提供 toolkit root。
 
 不要在 Codex skill 中使用 `${CLAUDE_PLUGIN_ROOT}`；那是 Claude Code plugin runtime 的環境變數。
@@ -410,7 +410,7 @@ commands/*.md
 scripts/*.sh
 ```
 
-Proposed Codex distribution layout:
+Codex distribution layout (as shipped):
 
 ```text
 plugins/pr-review-toolkit/
@@ -428,19 +428,15 @@ plugins/pr-review-toolkit/
         └── common.sh
 ```
 
-The Codex package is self-contained so installed skills can resolve `PR_REVIEW_TOOLKIT_ROOT` to the packaged plugin root and execute `scripts/*` there. The repository root `scripts/` directory remains authoritative; CI compares each packaged copy under `plugins/pr-review-toolkit/scripts/` against the root script to prevent drift.
+The Codex package is self-contained so installed skills resolve `PR_REVIEW_TOOLKIT_ROOT` to the packaged plugin root and execute `scripts/*` there. The repository root `scripts/` directory remains authoritative; CI (`validate.yml` and `release.yml`) enforces bidirectional content and git-index-mode equality between each packaged copy under `plugins/pr-review-toolkit/scripts/` and the root script.
 
-Release requirements:
+Release requirements (CI-enforced):
 
-- Claude plugin version remains authoritative in `.claude-plugin/plugin.json`
-- `.claude-plugin/marketplace.json` plugin version must match `.claude-plugin/plugin.json`
-- Codex package metadata should use the same semantic version
-- Release validation should check Claude metadata, Codex metadata, packaged helper scripts, and cross-package version consistency
-- `CHANGELOG.md` should include one release stream covering both install targets
-
-Open packaging question:
-
-- The exact Codex marketplace / install metadata format must be confirmed before implementation. Until then, keep Codex-specific files under `codex/` and avoid changing Claude marketplace metadata.
+- Claude plugin version is authoritative in `.claude-plugin/plugin.json`.
+- `.claude-plugin/marketplace.json` plugin version must match `.claude-plugin/plugin.json`.
+- Codex package metadata must use the same semantic version as the Claude plugin.
+- Release validation must check Claude metadata, Codex metadata, packaged helper scripts (content + index mode), and cross-package version consistency.
+- `CHANGELOG.md` includes one release stream covering both install targets.
 
 ## Implementation Phases
 

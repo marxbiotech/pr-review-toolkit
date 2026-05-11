@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/lib/common.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/lib/common.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Shared utility functions for pr-review-toolkit scripts
 #
 # Usage: source "$SCRIPT_DIR/lib/common.sh"

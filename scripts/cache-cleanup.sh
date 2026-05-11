@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/cache-cleanup.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/cache-cleanup.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Clean up cache files for merged or closed PRs
 # Also cleans up stale entries in branch-map.json
 #

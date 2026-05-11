@@ -73,11 +73,11 @@ Set the toolkit root for Codex sessions that run these skills. For source instal
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
-Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `scripts/cache-*.sh` helpers.
+Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers.
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
-ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your packaged plugin root — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not `./scripts/...`. Replace `/path/to/pr-review-toolkit/plugins/pr-review-toolkit` below with the absolute packaged plugin path.
+ACP approval matching is a literal prefix match against the command Codex executes. Because the shell expands `${PR_REVIEW_TOOLKIT_ROOT}` before ACP sees the command, approvals must use the expanded absolute path for your packaged plugin root — not the literal `$PR_REVIEW_TOOLKIT_ROOT` string and not a relative path like `./plugins/pr-review-toolkit/scripts/...`. Replace `/path/to/pr-review-toolkit/plugins/pr-review-toolkit` below with the absolute packaged plugin path.
 
 ```text
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/get-pr-number.sh"]

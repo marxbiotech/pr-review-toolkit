@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/review-metadata-replace.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/review-metadata-replace.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Replace the pr-review metadata block in a review comment.
 #
 # Usage:

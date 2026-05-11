@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/deploy-pr.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/deploy-pr.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 #
 # Deploy to environment by commenting on the current branch's PR
 #

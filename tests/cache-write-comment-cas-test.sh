@@ -22,7 +22,9 @@
 
 set -euo pipefail
 
-SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/cache-write-comment.sh"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="${SCRIPT_DIR:-$ROOT_DIR/scripts}"
+SCRIPT="$SCRIPT_DIR/cache-write-comment.sh"
 
 if [ ! -x "$SCRIPT" ]; then
   echo "FAIL: script under test not found or not executable: $SCRIPT" >&2

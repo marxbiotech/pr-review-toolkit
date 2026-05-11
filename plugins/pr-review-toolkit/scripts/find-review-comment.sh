@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/find-review-comment.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/find-review-comment.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Find existing PR review comment — checks local cache first, falls back to API
 # Returns comment_id if found, empty string otherwise
 #

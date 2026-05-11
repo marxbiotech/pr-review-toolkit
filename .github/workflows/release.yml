@@ -74,29 +74,27 @@ jobs:
             exit 1
           fi
 
-          shopt -s nullglob
-          root_scripts=(scripts/*.sh scripts/lib/*.sh)
-          shopt -u nullglob
-          if [ "${#root_scripts[@]}" -eq 0 ]; then
-            echo "::error::Release blocked: no root helper scripts found under scripts/"
+          if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
+            echo "::error::Release blocked: Codex packaged scripts drifted from root scripts/"
+            diff -ru scripts/ plugins/pr-review-toolkit/scripts/ | head -40 || true
+            echo "Run: rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/"
+            echo "See AGENTS.md ('Authoritative vs. packaged scripts') for the contract."
             exit 1
           fi
-          for src in "${root_scripts[@]}"; do
-            dest="plugins/pr-review-toolkit/${src}"
-            if [ ! -f "$dest" ]; then
-              echo "::error::Release blocked: missing packaged Codex helper script $dest"
-              exit 1
-            fi
-            if ! cmp -s "$src" "$dest"; then
-              echo "::error::Release blocked: packaged Codex helper script drifted from root script: $dest"
-              exit 1
-            fi
-            if [[ "$src" == scripts/* && "$src" != scripts/lib/* ]] && [ ! -x "$dest" ]; then
-              echo "::error::Release blocked: packaged Codex helper script is not executable: $dest"
-              exit 1
-            fi
-          done
-          echo "✓ All release artifacts present and valid JSON"
+          root_modes=$(git ls-files --stage scripts/ \
+            | awk '{print $1, $4}' \
+            | sed 's| scripts/| |' \
+            | sort)
+          pkg_modes=$(git ls-files --stage plugins/pr-review-toolkit/scripts/ \
+            | awk '{print $1, $4}' \
+            | sed 's| plugins/pr-review-toolkit/scripts/| |' \
+            | sort)
+          if ! diff <(echo "$root_modes") <(echo "$pkg_modes") >/dev/null; then
+            echo "::error::Release blocked: git index modes differ between scripts/ trees"
+            diff <(echo "$root_modes") <(echo "$pkg_modes") || true
+            exit 1
+          fi
+          echo "✓ All release artifacts present and valid JSON; packaged scripts identical (content + mode)"
 
       - name: Get version from plugin.json
         id: version

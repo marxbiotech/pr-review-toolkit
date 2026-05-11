@@ -17,8 +17,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UPGRADE="$ROOT_DIR/scripts/review-metadata-upgrade.sh"
-REPLACE="$ROOT_DIR/scripts/review-metadata-replace.sh"
+SCRIPT_DIR="${SCRIPT_DIR:-$ROOT_DIR/scripts}"
+UPGRADE="$SCRIPT_DIR/review-metadata-upgrade.sh"
+REPLACE="$SCRIPT_DIR/review-metadata-replace.sh"
 FIXTURES="$ROOT_DIR/tests/fixtures"
 
 tmp_metadata=$(mktemp)

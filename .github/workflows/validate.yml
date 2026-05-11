@@ -47,6 +47,15 @@ jobs:
             echo "✅ Found: $file"
           done
 
+      - name: Syntax-check shell scripts
+        run: |
+          set -euo pipefail
+          echo "Syntax-checking all shell scripts..."
+          bash -n scripts/*.sh scripts/lib/*.sh \
+            plugins/pr-review-toolkit/scripts/*.sh \
+            plugins/pr-review-toolkit/scripts/lib/*.sh
+          echo "✅ All shell scripts pass bash -n"
+
       - name: Validate semver format
         run: |
           set -euo pipefail
@@ -251,37 +260,37 @@ jobs:
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
 
-      - name: Validate Codex packaged scripts
+      - name: Validate Codex packaged scripts (content drift)
         run: |
           set -euo pipefail
-          echo "Validating packaged Codex helper scripts..."
-
-          shopt -s nullglob
-          root_scripts=(scripts/*.sh scripts/lib/*.sh)
-          shopt -u nullglob
-
-          if [ "${#root_scripts[@]}" -eq 0 ]; then
-            echo "::error::No root helper scripts found under scripts/"
+          echo "Validating packaged Codex helper scripts (bidirectional drift check)..."
+          if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
+            echo "::error::Codex packaged scripts drifted from root scripts/ (extras, missing, or content differ)"
+            diff -ru scripts/ plugins/pr-review-toolkit/scripts/ | head -40 || true
+            echo "Run: rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/"
+            echo "See AGENTS.md ('Authoritative vs. packaged scripts') for the contract."
             exit 1
           fi
+          echo "✅ scripts/ and plugins/pr-review-toolkit/scripts/ are identical"
 
-          for src in "${root_scripts[@]}"; do
-            dest="plugins/pr-review-toolkit/${src}"
-            if [ ! -f "$dest" ]; then
-              echo "::error::Missing packaged Codex helper script: $dest"
-              exit 1
-            fi
-            if ! cmp -s "$src" "$dest"; then
-              echo "::error::Packaged Codex helper script drifted from root script: $dest"
-              echo "Run: cp scripts/*.sh plugins/pr-review-toolkit/scripts/ && cp scripts/lib/*.sh plugins/pr-review-toolkit/scripts/lib/"
-              exit 1
-            fi
-            if [[ "$src" == scripts/* && "$src" != scripts/lib/* ]] && [ ! -x "$dest" ]; then
-              echo "::error::Packaged Codex helper script is not executable: $dest"
-              exit 1
-            fi
-            echo "✅ Packaged helper matches: $dest"
-          done
+      - name: Validate Codex packaged scripts (git index modes)
+        run: |
+          set -euo pipefail
+          echo "Comparing git index modes between scripts/ and plugins/pr-review-toolkit/scripts/..."
+          root_modes=$(git ls-files --stage scripts/ \
+            | awk '{print $1, $4}' \
+            | sed 's| scripts/| |' \
+            | sort)
+          pkg_modes=$(git ls-files --stage plugins/pr-review-toolkit/scripts/ \
+            | awk '{print $1, $4}' \
+            | sed 's| plugins/pr-review-toolkit/scripts/| |' \
+            | sort)
+          if ! diff <(echo "$root_modes") <(echo "$pkg_modes") >/dev/null; then
+            echo "::error::Git index modes differ between scripts/ trees (e.g. exec-bit drift)"
+            diff <(echo "$root_modes") <(echo "$pkg_modes") || true
+            exit 1
+          fi
+          echo "✅ Git index modes match across both script trees"
 
       - name: Install yq
         run: |
@@ -385,7 +394,12 @@ jobs:
             echo "::error::No shell test suites found under tests/*-test.sh"
             exit 1
           fi
-          for t in "${test_files[@]}"; do
-            echo "▶ Running $t"
-            bash "$t"
+          # Run each test against BOTH script trees so the packaging contract is
+          # exercised end-to-end (not just byte-equality from the drift check).
+          for tree in "scripts" "plugins/pr-review-toolkit/scripts"; do
+            echo "═══ Running tests with SCRIPT_DIR=$tree ═══"
+            for t in "${test_files[@]}"; do
+              echo "▶ $t"
+              SCRIPT_DIR="$PWD/$tree" bash "$t"
+            done
           done

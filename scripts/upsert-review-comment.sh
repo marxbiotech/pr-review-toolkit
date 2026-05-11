@@ -1,4 +1,10 @@
 #!/bin/bash
+# NOTE: This script is duplicated across two trees:
+#   - scripts/upsert-review-comment.sh                          (authoritative)
+#   - plugins/pr-review-toolkit/scripts/upsert-review-comment.sh (packaged copy)
+# CI enforces byte+mode equality. Edit BOTH in the same commit, or sync via:
+#   rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/
+#
 # Create or update PR review comment
 #
 # Usage: ./upsert-review-comment.sh <CONTENT_FILE> [PR_NUMBER]
