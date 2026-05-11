@@ -74,27 +74,12 @@ jobs:
             exit 1
           fi
 
-          if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
-            echo "::error::Release blocked: Codex packaged scripts drifted from root scripts/"
-            diff -ru scripts/ plugins/pr-review-toolkit/scripts/ | head -40 || true
-            echo "Run: rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/"
-            echo "See AGENTS.md ('Authoritative vs. packaged scripts') for the contract."
-            exit 1
-          fi
-          root_modes=$(git ls-files --stage scripts/ \
-            | awk '{print $1, $4}' \
-            | sed 's| scripts/| |' \
-            | sort)
-          pkg_modes=$(git ls-files --stage plugins/pr-review-toolkit/scripts/ \
-            | awk '{print $1, $4}' \
-            | sed 's| plugins/pr-review-toolkit/scripts/| |' \
-            | sort)
-          if ! diff <(echo "$root_modes") <(echo "$pkg_modes") >/dev/null; then
-            echo "::error::Release blocked: git index modes differ between scripts/ trees"
-            diff <(echo "$root_modes") <(echo "$pkg_modes") || true
-            exit 1
-          fi
-          echo "✓ All release artifacts present and valid JSON; packaged scripts identical (content + mode)"
+          echo "✓ All release artifacts present and valid JSON"
+
+      - name: Check script parity
+        uses: ./.github/actions/check-script-parity
+        with:
+          error-prefix: 'Release blocked: '
 
       - name: Get version from plugin.json
         id: version

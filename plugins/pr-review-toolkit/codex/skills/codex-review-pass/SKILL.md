@@ -14,14 +14,21 @@ Use `.pr-review-cache/pr-#.json` as the only PR review state file. Do not create
 Find the toolkit root in this order:
 
 1. Use `PR_REVIEW_TOOLKIT_ROOT` when set. This is the supported path.
-2. If `PR_REVIEW_TOOLKIT_ROOT` is unset, derive the packaged plugin root from the skill path. This SKILL.md lives at `<root>/codex/skills/<skill-name>/SKILL.md`, so `<root>` is exactly three levels up:
+2. If `PR_REVIEW_TOOLKIT_ROOT` is unset, derive the packaged plugin root from the skill path. This SKILL.md lives at `<root>/codex/skills/<skill-name>/SKILL.md`, so `<root>` is exactly three levels up. Substitute `$SKILL_PATH` with the absolute path of this SKILL.md (the Codex runtime usually exposes this; if not, ask the dev agent for it before running the snippet):
 
    ```bash
+   : "${SKILL_PATH:?SKILL_PATH must be set to the absolute path of this SKILL.md}"
    PR_REVIEW_TOOLKIT_ROOT="$(cd "$(dirname "$SKILL_PATH")/../../.." && pwd)"
    ```
 
-   Then verify both `<root>/.codex-plugin/plugin.json` and `<root>/scripts/cache-write-comment.sh` exist (sentinels for "we landed at a packaged plugin root, not an arbitrary ancestor"). If either is missing, treat the derivation as failed and proceed to step 3.
+   Then verify both `<root>/.codex-plugin/plugin.json` and `<root>/scripts/cache-write-comment.sh` exist (sentinels for "we landed at a packaged plugin root, not an arbitrary ancestor"; the first is the Codex marketplace manifest path, the second is the most-referenced helper — if either is renamed in the future, update this list). If either is missing, treat the derivation as failed and proceed to step 3.
 3. Stop and ask the dev agent for `PR_REVIEW_TOOLKIT_ROOT`.
+
+After resolving the root via step 1 or 2, canonicalize it to an absolute path so helpers that `cd` before invoking siblings cannot break:
+
+```bash
+PR_REVIEW_TOOLKIT_ROOT="$(cd "$PR_REVIEW_TOOLKIT_ROOT" && pwd)"
+```
 
 Use only these scripts for review state:
 
@@ -53,7 +60,7 @@ for helper in \
 done
 if [ ! -r "${PR_REVIEW_TOOLKIT_ROOT}/scripts/lib/common.sh" ]; then
   echo "Missing readable shared library: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/lib/common.sh" >&2
-  echo "(Every helper above sources this file at startup.)" >&2
+  echo "(The cache and PR-number helpers above source this file; the metadata helpers do not, but it ships in the package and we treat its absence as a packaging failure.)" >&2
   exit 2
 fi
 ```

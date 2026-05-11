@@ -50,11 +50,27 @@ jobs:
       - name: Syntax-check shell scripts
         run: |
           set -euo pipefail
-          echo "Syntax-checking all shell scripts..."
-          bash -n scripts/*.sh scripts/lib/*.sh \
-            plugins/pr-review-toolkit/scripts/*.sh \
+          shopt -s nullglob
+          files=(
+            scripts/*.sh
+            scripts/lib/*.sh
+            plugins/pr-review-toolkit/scripts/*.sh
             plugins/pr-review-toolkit/scripts/lib/*.sh
-          echo "✅ All shell scripts pass bash -n"
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No shell scripts found to syntax-check"
+            exit 1
+          fi
+          echo "Syntax-checking ${#files[@]} shell scripts..."
+          fail=0
+          for f in "${files[@]}"; do
+            if ! bash -n "$f"; then
+              echo "::error::Syntax error in $f"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "✅ All ${#files[@]} shell scripts pass bash -n"
 
       - name: Validate semver format
         run: |
@@ -260,37 +276,32 @@ jobs:
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
 
-      - name: Validate Codex packaged scripts (content drift)
-        run: |
-          set -euo pipefail
-          echo "Validating packaged Codex helper scripts (bidirectional drift check)..."
-          if ! diff -rq scripts/ plugins/pr-review-toolkit/scripts/; then
-            echo "::error::Codex packaged scripts drifted from root scripts/ (extras, missing, or content differ)"
-            diff -ru scripts/ plugins/pr-review-toolkit/scripts/ | head -40 || true
-            echo "Run: rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/"
-            echo "See AGENTS.md ('Authoritative vs. packaged scripts') for the contract."
-            exit 1
-          fi
-          echo "✅ scripts/ and plugins/pr-review-toolkit/scripts/ are identical"
+      - name: Check script parity
+        uses: ./.github/actions/check-script-parity
 
-      - name: Validate Codex packaged scripts (git index modes)
+      - name: Verify duplication banner mentions both tree paths
         run: |
           set -euo pipefail
-          echo "Comparing git index modes between scripts/ and plugins/pr-review-toolkit/scripts/..."
-          root_modes=$(git ls-files --stage scripts/ \
-            | awk '{print $1, $4}' \
-            | sed 's| scripts/| |' \
-            | sort)
-          pkg_modes=$(git ls-files --stage plugins/pr-review-toolkit/scripts/ \
-            | awk '{print $1, $4}' \
-            | sed 's| plugins/pr-review-toolkit/scripts/| |' \
-            | sort)
-          if ! diff <(echo "$root_modes") <(echo "$pkg_modes") >/dev/null; then
-            echo "::error::Git index modes differ between scripts/ trees (e.g. exec-bit drift)"
-            diff <(echo "$root_modes") <(echo "$pkg_modes") || true
-            exit 1
-          fi
-          echo "✅ Git index modes match across both script trees"
+          shopt -s nullglob
+          files=(scripts/*.sh scripts/lib/*.sh \
+                 plugins/pr-review-toolkit/scripts/*.sh \
+                 plugins/pr-review-toolkit/scripts/lib/*.sh)
+          fail=0
+          for f in "${files[@]}"; do
+            base="${f#scripts/}"
+            base="${base#plugins/pr-review-toolkit/scripts/}"
+            # Banner should mention both authoritative and packaged paths for this file.
+            if ! head -8 "$f" | grep -qF "scripts/${base}"; then
+              echo "::error::$f banner is missing the 'scripts/${base}' path reference"
+              fail=1
+            fi
+            if ! head -8 "$f" | grep -qF "plugins/pr-review-toolkit/scripts/${base}"; then
+              echo "::error::$f banner is missing the 'plugins/pr-review-toolkit/scripts/${base}' path reference"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "✅ All ${#files[@]} banners reference both authoritative and packaged paths"
 
       - name: Install yq
         run: |
