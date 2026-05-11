@@ -31,7 +31,7 @@ Use Bash for scripts and Markdown for skills and docs. Shell scripts should star
 
 ## Testing Guidelines
 
-No formal test suite is present. Validate changes with targeted command checks: run `bash -n` for edited scripts, `jq empty` for edited JSON, and execute the specific script path you changed when practical. For skill changes, review the trigger phrases and required tools in the edited `SKILL.md`, then verify any referenced scripts or files exist.
+Test suites live under `tests/*-test.sh` and are exercised by `validate.yml` against both `scripts/` and `plugins/pr-review-toolkit/scripts/`; see the `SCRIPT_DIR=... bash tests/<test-file>.sh` invocation above for running a single test locally (CI runs both trees automatically). Also validate changes with targeted command checks: run `bash -n` for edited scripts, `jq empty` for edited JSON, and execute the specific script path you changed when practical. For skill changes, review the trigger phrases and required tools in the edited `SKILL.md`, then verify any referenced scripts or files exist.
 
 ## Commit & Pull Request Guidelines
 

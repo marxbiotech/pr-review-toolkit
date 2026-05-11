@@ -299,6 +299,11 @@ jobs:
             # Banner should mention both authoritative and packaged paths for this file.
             # Anchor the authoritative-path grep so it cannot match as a substring of the
             # packaged path `plugins/pr-review-toolkit/scripts/${base}`.
+            # Design Decision: only `.` needs escaping for the current filename corpus
+            # (all helpers match `[a-z][a-z-]*\.sh`). If a future helper adds ERE
+            # metachars like `[`, `]`, `*`, `?`, `+`, `(`, `)`, `|`, `^`, `$`, `\`,
+            # `{`, or `}` to its filename, widen this escape (e.g. via
+            # `sed 's/[][\\.*^$/(){}?+|]/\\&/g'`) or pin the filename charset upfront.
             escaped_base="${base//./\\.}"
             if ! head -8 "$f" | grep -qE "(^|[^/])scripts/${escaped_base}([[:space:]]|$)"; then
               echo "::error::$f banner is missing the 'scripts/${base}' path reference"

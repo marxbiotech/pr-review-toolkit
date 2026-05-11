@@ -173,6 +173,7 @@ PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 3. 若上述兩步皆失敗，停止並要求 dev agent 提供 `PR_REVIEW_TOOLKIT_ROOT`。
 
 無論透過步驟 1 或步驟 2 解析成功，在使用前都應將 root 規範化為絕對路徑（canonicalize）。
+`PR_REVIEW_TOOLKIT_ROOT` 一旦設定即視為不可變且為絕對路徑——所有消費者（helpers、workflow 與其他 scripts）可自由 `cd` 而不影響其值。
 
 不要在 Codex skill 中使用 `${CLAUDE_PLUGIN_ROOT}`；那是 Claude Code plugin runtime 的環境變數。
 
