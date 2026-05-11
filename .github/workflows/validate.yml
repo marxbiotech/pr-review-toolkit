@@ -251,6 +251,38 @@ jobs:
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
 
+      - name: Validate Codex packaged scripts
+        run: |
+          set -euo pipefail
+          echo "Validating packaged Codex helper scripts..."
+
+          shopt -s nullglob
+          root_scripts=(scripts/*.sh scripts/lib/*.sh)
+          shopt -u nullglob
+
+          if [ "${#root_scripts[@]}" -eq 0 ]; then
+            echo "::error::No root helper scripts found under scripts/"
+            exit 1
+          fi
+
+          for src in "${root_scripts[@]}"; do
+            dest="plugins/pr-review-toolkit/${src}"
+            if [ ! -f "$dest" ]; then
+              echo "::error::Missing packaged Codex helper script: $dest"
+              exit 1
+            fi
+            if ! cmp -s "$src" "$dest"; then
+              echo "::error::Packaged Codex helper script drifted from root script: $dest"
+              echo "Run: cp scripts/*.sh plugins/pr-review-toolkit/scripts/ && cp scripts/lib/*.sh plugins/pr-review-toolkit/scripts/lib/"
+              exit 1
+            fi
+            if [[ "$src" == scripts/* && "$src" != scripts/lib/* ]] && [ ! -x "$dest" ]; then
+              echo "::error::Packaged Codex helper script is not executable: $dest"
+              exit 1
+            fi
+            echo "✅ Packaged helper matches: $dest"
+          done
+
       - name: Install yq
         run: |
           set -euo pipefail

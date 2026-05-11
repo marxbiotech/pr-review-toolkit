@@ -73,6 +73,29 @@ jobs:
             echo "::error::Release blocked: no Codex skills found under plugins/pr-review-toolkit/codex/skills/"
             exit 1
           fi
+
+          shopt -s nullglob
+          root_scripts=(scripts/*.sh scripts/lib/*.sh)
+          shopt -u nullglob
+          if [ "${#root_scripts[@]}" -eq 0 ]; then
+            echo "::error::Release blocked: no root helper scripts found under scripts/"
+            exit 1
+          fi
+          for src in "${root_scripts[@]}"; do
+            dest="plugins/pr-review-toolkit/${src}"
+            if [ ! -f "$dest" ]; then
+              echo "::error::Release blocked: missing packaged Codex helper script $dest"
+              exit 1
+            fi
+            if ! cmp -s "$src" "$dest"; then
+              echo "::error::Release blocked: packaged Codex helper script drifted from root script: $dest"
+              exit 1
+            fi
+            if [[ "$src" == scripts/* && "$src" != scripts/lib/* ]] && [ ! -x "$dest" ]; then
+              echo "::error::Release blocked: packaged Codex helper script is not executable: $dest"
+              exit 1
+            fi
+          done
           echo "✓ All release artifacts present and valid JSON"
 
       - name: Get version from plugin.json
@@ -163,7 +186,7 @@ jobs:
           echo "/plugin install pr-review-toolkit" >> release_notes.md
           echo '```' >> release_notes.md
           echo "" >> release_notes.md
-          echo "For Codex, this release includes a source plugin manifest at \`plugins/pr-review-toolkit/.codex-plugin/plugin.json\` with skills under \`plugins/pr-review-toolkit/codex/skills/\`." >> release_notes.md
+          echo "For Codex, this release includes a source plugin manifest at \`plugins/pr-review-toolkit/.codex-plugin/plugin.json\`, skills under \`plugins/pr-review-toolkit/codex/skills/\`, and helper scripts under \`plugins/pr-review-toolkit/scripts/\`." >> release_notes.md
 
           cat release_notes.md
         env:

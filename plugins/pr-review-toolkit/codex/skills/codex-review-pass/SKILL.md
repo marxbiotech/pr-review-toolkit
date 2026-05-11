@@ -14,7 +14,7 @@ Use `.pr-review-cache/pr-#.json` as the only PR review state file. Do not create
 Find the toolkit root in this order:
 
 1. Use `PR_REVIEW_TOOLKIT_ROOT` when set.
-2. If this skill is installed inside the toolkit repo, derive the root from the skill path.
+2. If this skill is installed inside the packaged Codex plugin, derive the root from the skill path by walking up to the ancestor that contains both `.codex-plugin/plugin.json` and `scripts/cache-write-comment.sh`.
 3. Stop and ask the dev agent for `PR_REVIEW_TOOLKIT_ROOT`.
 
 Use only these scripts for review state:
@@ -25,6 +25,24 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
+```
+
+Before running the workflow, verify the helper scripts are available:
+
+```bash
+: "${PR_REVIEW_TOOLKIT_ROOT:?Set PR_REVIEW_TOOLKIT_ROOT to the pr-review-toolkit plugin root}"
+
+for helper in \
+  get-pr-number.sh \
+  cache-read-comment.sh \
+  cache-write-comment.sh \
+  review-metadata-upgrade.sh \
+  review-metadata-replace.sh; do
+  if [ ! -x "${PR_REVIEW_TOOLKIT_ROOT}/scripts/${helper}" ]; then
+    echo "Missing executable helper: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/${helper}" >&2
+    exit 2
+  fi
+done
 ```
 
 ## Workflow

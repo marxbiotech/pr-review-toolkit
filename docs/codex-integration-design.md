@@ -413,23 +413,29 @@ scripts/*.sh
 Proposed Codex distribution layout:
 
 ```text
-codex/
-├── skills/
-│   ├── codex-review-pass/
-│   │   └── SKILL.md
-│   └── codex-fix-worker/
-│       └── SKILL.md
-└── plugin.json or marketplace metadata, pending Codex distribution requirements
+plugins/pr-review-toolkit/
+├── .codex-plugin/
+│   └── plugin.json
+├── codex/
+│   └── skills/
+│       ├── codex-review-pass/
+│       │   └── SKILL.md
+│       └── codex-fix-worker/
+│           └── SKILL.md
+└── scripts/
+    ├── *.sh
+    └── lib/
+        └── common.sh
 ```
 
-The Codex skills should reuse the root `scripts/` directory instead of copying cache logic. If Codex packaging requires self-contained skill folders, use thin wrapper scripts that delegate to the root scripts, and keep the root scripts authoritative.
+The Codex package is self-contained so installed skills can resolve `PR_REVIEW_TOOLKIT_ROOT` to the packaged plugin root and execute `scripts/*` there. The repository root `scripts/` directory remains authoritative; CI compares each packaged copy under `plugins/pr-review-toolkit/scripts/` against the root script to prevent drift.
 
 Release requirements:
 
 - Claude plugin version remains authoritative in `.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json` plugin version must match `.claude-plugin/plugin.json`
 - Codex package metadata should use the same semantic version
-- Release validation should check Claude metadata, Codex metadata, and cross-package version consistency once Codex packaging is added
+- Release validation should check Claude metadata, Codex metadata, packaged helper scripts, and cross-package version consistency
 - `CHANGELOG.md` should include one release stream covering both install targets
 
 Open packaging question:
