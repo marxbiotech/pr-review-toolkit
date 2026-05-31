@@ -70,13 +70,18 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    esac
    ```
 
-3. Extract the cache `content_hash` for CAS:
+3. Extract the cache `content_hash` for CAS and validate it locally before relying on it:
 
    ```bash
    EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
+   if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+     echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
+     "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"
+     exit 2
+   fi
    ```
 
-   The hash must match `^sha256:[0-9a-f]{64}$` (`cache-write-comment.sh:36-44`). If the field is missing or malformed, abort and run `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER" --force-refresh` before retrying.
+   `cache-write-comment.sh:36-44` enforces the same regex at write-time, but checking at extract-time gives a clearer error and triggers the documented recovery (`cache-sync.sh` re-fetches the canonical comment from GitHub) rather than failing late inside the write pipeline.
 4. Parse unresolved items from the review content.
 5. For each unresolved issue, one at a time:
    - Present the issue in Traditional Chinese.
@@ -90,6 +95,17 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    - Check for overlap with any in-progress fix worker. Do not run two workers with overlapping owned files concurrently.
    - Spawn or invoke bounded fix work using the managed-only `codex-fix-worker` contract. Provide PR number, source, issue title, file references, user decision, and owned files.
    - Track `{issue title, source, owned files, worker id/status}` in memory.
+   - Maintain a single accumulating bash array `OWNED_FILES` across every fix-worker invocation in this resolver session:
+
+     ```bash
+     # Initialize once at the start of the resolver session.
+     declare -a OWNED_FILES=()
+
+     # Each time a fix-worker is dispatched with owned files A B C:
+     OWNED_FILES+=(A B C)
+     ```
+
+     Step 9's scope check reads `"${OWNED_FILES[@]}"`. If the array is not maintained, every change will look "unexpected" (false-positive abort under `set -u`, or silent fail-open under `set +u`).
    - Continue discussing later issues only when doing so does not require the same files.
 7. For Deferred or N/A decisions:
    - Record the reason from the user.
@@ -102,19 +118,30 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    - `Status: success`: mark only that issue as `✅ Fixed` and include a concise fix/validation note.
    - `Status: partial`: report the validation gap in Traditional Chinese and ask the user whether to accept-as-fixed, retry, or defer.
    - `Status: failed`: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A. Do not mark `✅ Fixed`.
-9. Validate modified file scope. Default `git diff --name-only` misses untracked new files and renames; use the explicit sequence below so an out-of-scope worker write cannot pass silently:
+9. Validate modified file scope. Default `git diff --name-only` misses untracked new files and renames; use the explicit sequence below so an out-of-scope worker write cannot pass silently. The `-z` form of `git status` produces null-delimited records that survive filenames containing spaces, quotes, or other shell-significant characters:
 
    ```bash
-   # Build the actual changed set (tracked + staged + untracked).
-   ACTUAL=$( { git diff --name-only HEAD; git status --porcelain | awk '/^\?\?/ {print $2}'; } | sort -u )
+   # Tracked-but-modified paths (works fine without -z since git diff --name-only
+   # already prints one quoted path per line and we feed it through sort -u).
+   TRACKED=$(git diff --name-only HEAD)
 
-   # OWNED_FILES is the union of every owned-files list the resolver passed to fix-worker(s) this session.
-   EXPECTED=$(printf '%s\n' "${OWNED_FILES[@]}" | sort -u)
+   # Untracked paths via null-delimited porcelain v1: each record is `XY path\0`,
+   # so `cut -c4-` strips the 3-char status prefix and preserves spaces in paths.
+   # `tr '\0' '\n'` converts to one-path-per-line for the union below.
+   UNTRACKED=$(git status -z --porcelain | awk -v RS='\0' '/^\?\? / { print substr($0, 4) }')
+
+   ACTUAL=$(printf '%s\n%s\n' "$TRACKED" "$UNTRACKED" | sort -u | sed '/^$/d')
+
+   # OWNED_FILES is the array maintained in Step 6 across all worker dispatches.
+   EXPECTED=$(printf '%s\n' "${OWNED_FILES[@]}" | sort -u | sed '/^$/d')
 
    UNEXPECTED=$(comm -23 <(printf '%s\n' "$ACTUAL") <(printf '%s\n' "$EXPECTED"))
    if [ -n "$UNEXPECTED" ]; then
      echo "Unexpected files changed (not in any worker's owned set):" >&2
-     printf '  %s\n' $UNEXPECTED >&2
+     # Quote to preserve spaces in filenames in the diagnostic output.
+     while IFS= read -r f; do
+       printf '  %s\n' "$f" >&2
+     done <<< "$UNEXPECTED"
      # Stop and ask the user before continuing.
      exit 2
    fi
@@ -156,10 +183,21 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
 
 11. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: GitHub sync failed but local cache is up to date; recommend `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"`.
+    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file:
+
+      ```bash
+      STALE=$(jq -r '.stale_source_id // false' ".pr-review-cache/pr-${PR_NUMBER}.json")
+      if [ "$STALE" = "true" ]; then
+        echo "Post-sync cache repair failed; recover with ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
+      else
+        echo "GitHub sync failed but local cache is up to date." >&2
+        echo "Retry with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh --sync-from-cache \"$PR_NUMBER\"" >&2
+      fi
+      ```
+
     - `2`: local error; abort.
-    - `3`: remote is newer; re-read with `cache-sync.sh "$PR_NUMBER" --force-refresh`, then redo Steps 2-10 against the fresh content.
-    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$REVIEW_CONTENT`, re-run Step 3 to recapture `EXPECTED_CONTENT_HASH`, re-apply only this resolver session's status updates to the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` and stop.
+    - `3`: remote is newer; re-fetch with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it does a force-refresh internally), then redo Steps 2-10 against the fresh content.
+    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$REVIEW_CONTENT`, re-run Step 3 to recapture and re-validate `EXPECTED_CONTENT_HASH`, re-apply only this resolver session's status updates to the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` and stop.
 12. Consider whether resolved decisions should update durable project guidance such as `AGENTS.md`, `CLAUDE.md`, or docs. Ask the user before making guidance changes.
 
 ## Unresolved Item Detection

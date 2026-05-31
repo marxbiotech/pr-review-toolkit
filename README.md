@@ -189,7 +189,7 @@ graph LR
 
 ### Codex flow
 
-The Codex side splits the same workflow across five skills with a clear producer/publisher/integrator/resolver/worker boundary:
+The Codex side splits the same workflow across five skills with a clear producer/publisher/integrator/resolver/worker boundary. The diagram below shows the Codex-first variant (Codex runs the review pass and bootstraps the canonical comment). For the mixed Claude-first → Codex-resolver scenario where Claude's `pr-review-and-document` runs first and Codex participates later, see [`docs/codex-integration-design.md`](docs/codex-integration-design.md).
 
 ```mermaid
 graph LR
@@ -246,7 +246,11 @@ The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugi
 | `review-metadata-replace.sh` | Replace the hidden metadata block without changing issue sections |
 | `deploy-pr.sh` | PR deploy helper used by the `deploy-pr` skill |
 
-Skills should only call `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, and `review-metadata-replace.sh` directly. `find-review-comment.sh` and `upsert-review-comment.sh` are internal helpers used by the cache layer.
+Scripts fall into three call-site categories:
+
+- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
+- **Internal helpers** (used by the scripts above, never called directly by skills): `find-review-comment.sh`, `upsert-review-comment.sh`.
+- **Maintenance / out-of-band CLI** (run by humans or by skills outside the canonical review workflow): `cache-cleanup.sh` (stale cache pruning), `deploy-pr.sh` (used by the `deploy-pr` skill).
 
 ## License
 

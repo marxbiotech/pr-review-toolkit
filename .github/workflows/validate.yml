@@ -417,18 +417,37 @@ jobs:
 
           script_trees=("scripts" "plugins/pr-review-toolkit/scripts")
           fail=0
-          referenced_total=0
+          unique_refs=0
 
           for skill_file in plugins/pr-review-toolkit/codex/skills/*/SKILL.md; do
             # Extract every "${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh" reference
             # and dedupe (a skill may reference the same script several times).
-            refs=$(grep -oE '\$\{PR_REVIEW_TOOLKIT_ROOT\}/scripts/[a-z0-9_-]+\.sh' "$skill_file" \
+            #
+            # The `|| true` on grep keeps pipefail from aborting when a SKILL.md
+            # has zero references (grep exits 1 → pipeline exits 1 → command
+            # substitution under set -euo pipefail aborts the whole step without
+            # ever reaching the "$refs" empty guard below). Without this, the
+            # first SKILL.md with no script refs (e.g. codex-fix-worker) breaks
+            # the whole lint with no diagnostic.
+            #
+            # Charset note: the regex covers lowercase, uppercase, digit, dot,
+            # underscore, dash so a typo'd "Cache-Read.sh" is checked (and fails)
+            # rather than being silently skipped.
+            refs=$( { grep -oE '\$\{PR_REVIEW_TOOLKIT_ROOT\}/scripts/[A-Za-z0-9._-]+\.sh' "$skill_file" || true; } \
                    | sed 's|^\${PR_REVIEW_TOOLKIT_ROOT}/scripts/||' \
-                   | sort -u)
+                   | sort -u )
             [ -z "$refs" ] && continue
 
             while IFS= read -r script_name; do
-              referenced_total=$((referenced_total + 1))
+              # Defensive: skip whitespace-only/empty entries that could slip in
+              # if a future pipeline change produced them. With pipefail fixed
+              # above, [ -z "$refs" ] already covers strictly empty $refs, but
+              # whitespace-only would still iterate once with an empty name and
+              # then [ ! -x "scripts/" ] would silently pass (directories are
+              # executable).
+              [ -z "${script_name// /}" ] && continue
+
+              unique_refs=$((unique_refs + 1))
               for tree in "${script_trees[@]}"; do
                 target="${tree}/${script_name}"
                 if [ ! -x "$target" ]; then
@@ -442,7 +461,7 @@ jobs:
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "✅ All $referenced_total SKILL.md script references resolve in both trees"
+          echo "✅ All $unique_refs unique SKILL.md script references resolve in both trees"
 
       - name: Lock codex-fix-worker resolver-managed contract
         # codex-fix-worker is explicitly forbidden from touching review state.
@@ -451,17 +470,30 @@ jobs:
         run: |
           set -euo pipefail
           worker_skill="plugins/pr-review-toolkit/codex/skills/codex-fix-worker/SKILL.md"
-          forbidden_pattern='(cache-(read|write|sync)-comment|review-metadata-(upgrade|replace)|gh[[:space:]]+api|upsert-review-comment)'
 
-          # Strip fenced code blocks before scanning so the forbidden-script
-          # names can still appear inside an explanatory "do NOT call ..." prose
-          # callout without tripping the lint. Anything in a ``` ... ``` fence
-          # is treated as authoritative invocation surface and IS scanned.
+          # Forbidden names cover every script that could mutate review state
+          # (cache-(read|write)-comment, cache-sync, find-review-comment,
+          # review-metadata-{upgrade,replace}, upsert-review-comment) plus
+          # any `gh api` invocation. `cache-sync.sh` is named without a
+          # `-comment` suffix, so the alternation must list it explicitly —
+          # `cache-(...)-comment` alone would miss it.
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+
+          # Strip everything OUTSIDE fenced code blocks before scanning. Prose
+          # can mention forbidden script names harmlessly (e.g. a "do NOT call
+          # cache-write-comment.sh" callout in regular paragraphs), but anything
+          # inside ``` ... ``` or ~~~ ... ~~~ fences is treated as authoritative
+          # invocation surface and IS scanned.
+          #
+          # Fence detection covers triple-backtick and triple-tilde fences with
+          # up to 3 leading spaces (CommonMark-legal opening indent). 4-space
+          # indented code blocks are intentionally NOT supported by this lint
+          # — do not use them in SKILL.md for invocation examples.
           if awk '
-              /^```/ { in_fence = !in_fence; print; next }
+              /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
               in_fence { print }
             ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
-            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. codex-fix-worker must not call any of: cache-(read|write|sync)-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. codex-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
             exit 1
           fi
           echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"

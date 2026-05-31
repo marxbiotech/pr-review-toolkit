@@ -74,7 +74,7 @@ fi
    - `comment-analyzer.md`
 4. Spawn six read-only subagents in parallel, one per reference prompt. Each subagent task is the reference prompt plus the shared review packet.
 
-   "Read-only subagent" is the Codex-runtime concept of a subagent that has no write tools attached. In Codex CLI versions that expose subagent kinds (e.g. `explorer`), use the read-only kind; in runtimes that only attach tools per call, simply omit edit/cache/comment tools when invoking the subagent. The contract is the constraint set in step 5, not the specific subagent-kind label.
+   "Read-only subagent" is the Codex-runtime concept of a subagent that has no write tools attached. The concrete shape depends on the Codex runtime: in versions that expose explicit subagent kinds, use the read-only kind; in runtimes that only attach tools per call, simply omit edit/cache/comment tools when invoking the subagent. The contract is the constraint set in step 5, not any specific subagent-kind label.
 5. Each subagent must return findings only. Subagents must not edit files, write cache files, post comments, run `gh api`, or update metadata.
 6. Wait for all six subagents. If one fails, include a non-canonical follow-up note naming the failed aspect; do not silently omit it. Always emit the `Agents completed:` line as the actually-successful set so `pr-review-and-document` can refuse to publish a partial bundle.
 7. Aggregate results:

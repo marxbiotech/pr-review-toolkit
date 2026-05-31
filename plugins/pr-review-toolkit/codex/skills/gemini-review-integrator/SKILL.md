@@ -70,13 +70,18 @@ Before running the workflow, verify these helper scripts are executable and `scr
    ```
 
    `cache-read-comment.sh` exits `2` if no canonical comment exists — there is no need for a separate `find-review-comment.sh` precheck (it would return empty stdout with rc=0 and silently look like success).
-3. Extract the cache `content_hash` for CAS:
+3. Extract the cache `content_hash` for CAS and validate it locally before relying on it:
 
    ```bash
    EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
+   if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+     echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
+     "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"
+     exit 2
+   fi
    ```
 
-   The hash must match `^sha256:[0-9a-f]{64}$` (`cache-write-comment.sh:36-44`). If the field is missing or malformed, abort and run `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER" --force-refresh` before retrying.
+   `cache-write-comment.sh:36-44` enforces the same regex at write-time, but checking at extract-time gives a clearer error and triggers the documented recovery (`cache-sync.sh` re-fetches the canonical comment from GitHub) rather than failing late inside the write pipeline.
 4. Fetch Gemini comments with explicit error handling. The script can fail for several reasons (gh auth expired, GitHub 5xx, network timeout, malformed PR) — collapsing those into "no Gemini comments" silently masks integration failures:
 
    ```bash
@@ -178,10 +183,21 @@ Before running the workflow, verify these helper scripts are executable and `scr
 
 14. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: GitHub sync failed but local cache is up to date; recommend `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"`.
+    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file:
+
+      ```bash
+      STALE=$(jq -r '.stale_source_id // false' ".pr-review-cache/pr-${PR_NUMBER}.json")
+      if [ "$STALE" = "true" ]; then
+        echo "Post-sync cache repair failed; recover with ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
+      else
+        echo "GitHub sync failed but local cache is up to date." >&2
+        echo "Retry with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh --sync-from-cache \"$PR_NUMBER\"" >&2
+      fi
+      ```
+
     - `2`: local error; abort.
-    - `3`: remote is newer; re-read with `cache-sync.sh "$PR_NUMBER" --force-refresh`, then redo Steps 2-13 against the fresh content.
-    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$EXISTING_CONTENT`, re-run Step 3 to recapture `EXPECTED_CONTENT_HASH`, re-merge only the new Gemini integrations into the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` with the current content hash and stop.
+    - `3`: remote is newer; re-fetch with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it does a force-refresh internally), then redo Steps 2-13 against the fresh content.
+    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$EXISTING_CONTENT`, re-run Step 3 to recapture and re-validate `EXPECTED_CONTENT_HASH`, re-merge only the new Gemini integrations into the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` with the current content hash and stop.
 
 ## Gemini Comment Handling
 

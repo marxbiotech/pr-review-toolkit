@@ -429,8 +429,8 @@ sync_to_github() {
       echo "  Envelope flag set: stale_source_id=true" >&2
       echo "" >&2
       echo "To recover, run:" >&2
-      echo "  scripts/cache-sync.sh \"$PR_NUMBER\" --force-refresh" >&2
-      echo "  (repopulates the cache from GitHub)" >&2
+      echo "  scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
+      echo "  (re-fetches the canonical comment from GitHub and repopulates the cache envelope)" >&2
       echo "========================================" >&2
       return 1
     fi
