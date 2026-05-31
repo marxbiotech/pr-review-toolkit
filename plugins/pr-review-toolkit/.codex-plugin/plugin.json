@@ -1,7 +1,7 @@
 {
   "name": "pr-review-toolkit",
   "version": "2.0.2",
-  "description": "PR review workflow skills for Codex: parallel review passes, documented PR comments, interactive resolution, and resolver-managed bounded fixes.",
+  "description": "PR review workflow skills for Codex: parallel review passes, documented PR comments, Gemini integration, interactive resolution, and resolver-managed bounded fixes.",
   "author": {
     "name": "MarxBiotech",
     "email": "xin@marxbiotech.com",
@@ -20,8 +20,8 @@
   "skills": "./codex/skills/",
   "interface": {
     "displayName": "PR Review Toolkit",
-    "shortDescription": "Run parallel Codex PR reviews, document findings, resolve issues interactively, and fix selected issues.",
-    "longDescription": "Codex skills for participating in the pr-review-toolkit workflow. codex-review-pass launches six read-only review subagents and returns a deduplicated bundle; pr-review-and-document publishes that bundle through the shared .pr-review-cache/pr-#.json contract; pr-review-resolver discusses unresolved findings one by one, coordinates decisions, and owns status updates; codex-fix-worker is resolver-managed and only fixes selected code.",
+    "shortDescription": "Run parallel Codex PR reviews, document findings, integrate Gemini feedback, resolve issues, and fix selected code.",
+    "longDescription": "Codex skills for participating in the pr-review-toolkit workflow. codex-review-pass launches six read-only review subagents and returns a deduplicated bundle; pr-review-and-document publishes that bundle through the shared .pr-review-cache/pr-#.json contract; gemini-review-integrator merges Gemini Code Assist comments into the canonical review; pr-review-resolver discusses unresolved findings one by one, coordinates decisions, and owns status updates; codex-fix-worker is resolver-managed and only fixes selected code.",
     "developerName": "MarxBiotech",
     "category": "Productivity",
     "capabilities": [
@@ -32,6 +32,7 @@
     "defaultPrompt": [
       "Run a Codex PR review pass with six subagents.",
       "Review this PR and document the results.",
+      "Integrate Gemini review comments.",
       "Resolve PR review findings interactively.",
       "Fix one selected PR review issue.",
       "Update the canonical PR review comment."

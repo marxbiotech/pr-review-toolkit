@@ -18,6 +18,7 @@ pr-review-and-document
 ```text
 codex-review-pass
 pr-review-and-document
+gemini-review-integrator
 pr-review-resolver
 codex-fix-worker
 ```
@@ -395,6 +396,31 @@ Remaining risk:
 
 `pr-review-resolver`、dev agent 或人類負責更新 review comment、commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
 
+## Codex gemini-review-integrator
+
+Codex `gemini-review-integrator` 對應 Claude `gemini-review-integrator` 的行為。它負責把 Gemini Code Assist inline review comments 整合進同一份 canonical PR review comment。
+
+責任：
+
+1. 使用 `get-pr-number.sh` 找到 PR，並用 `find-review-comment.sh` 確認 canonical review comment 已存在。
+2. 使用 `fetch-gemini-comments.sh` 取得 Gemini Code Assist inline comments。
+3. 過濾 outdated comments (`is_outdated: true`)。
+4. 以 `review_sources.gemini.consumed_comment_ids` 為主、legacy `gemini_integrated_ids` 為 fallback 去重。
+5. 將 Gemini priority 映射到 canonical sections：
+   - high + security → Critical
+   - high → Important
+   - medium + security → Important
+   - medium / low → Suggestions
+6. 以 `[Gemini]` prefix 插入 canonical severity sections，保持初始狀態 `⚠️`。
+7. metadata dual-write：
+   - `review_sources.gemini.consumed_comment_ids`
+   - `review_sources.gemini.last_integrated_at`
+   - legacy `gemini_integrated_ids`
+   - legacy `gemini_integration_date`
+8. 保留 `review_sources.codex`、`review_sources.claude`、`[Codex]` issues 與未標來源的 Claude issues。
+9. 保持 `review_round` 不變；Gemini integration 不是新的 review producer。
+10. 透過 `cache-write-comment.sh --stdin --expected-content-hash` 寫回。
+
 ## Codex pr-review-resolver
 
 Codex `pr-review-resolver` 是互動式決策協調器，不是 `codex-fix-worker` 的別名。它對應 Claude `pr-review-resolver` 的行為：讀取 canonical review comment，逐一呈現未解決 issue，用繁體中文和使用者討論處理方式，等待使用者決定後才執行。
@@ -431,6 +457,7 @@ Claude-first workflow：
 Claude:    pr-review-and-document
 Claude:    gemini-review-integrator
 Codex:     pr-review-and-document
+Codex:     gemini-review-integrator
 Codex:     pr-review-resolver
 Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
@@ -441,7 +468,7 @@ Codex-first workflow：
 
 ```text
 Codex:     pr-review-and-document
-Claude:    gemini-review-integrator
+Codex:     gemini-review-integrator
 Codex:     pr-review-resolver
 Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
@@ -493,6 +520,8 @@ plugins/pr-review-toolkit/
 │       │   └── SKILL.md
 │       ├── pr-review-and-document/
 │       │   └── SKILL.md
+│       ├── gemini-review-integrator/
+│       │   └── SKILL.md
 │       ├── pr-review-resolver/
 │       │   ├── references/
 │       │   │   └── interaction-example.md
@@ -540,6 +569,7 @@ Phase 2 must ship Claude compatibility updates and Codex skill scaffolding toget
 - Update `pr-review-resolver` to recognize `[Codex]` issues and untagged Claude issues
 - Add `codex/skills/codex-review-pass/SKILL.md`
 - Add `codex/skills/pr-review-and-document/SKILL.md`
+- Add `codex/skills/gemini-review-integrator/SKILL.md`
 - Add `codex/skills/pr-review-resolver/SKILL.md`
 - Add `codex/skills/codex-fix-worker/SKILL.md`
 - Ensure Codex write-capable skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state

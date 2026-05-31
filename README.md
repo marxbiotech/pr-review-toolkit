@@ -55,6 +55,7 @@ This repository also includes a repo-scoped Codex marketplace at `.agents/plugin
 |-------|-------------|
 | **codex-review-pass** | Run six read-only Codex review subagents in parallel and return one deduplicated review bundle |
 | **pr-review-and-document** | Publish the Codex review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
+| **gemini-review-integrator** | Integrate Gemini Code Assist inline comments into the canonical PR review comment |
 | **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
 | **codex-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
 
@@ -75,7 +76,7 @@ Set the toolkit root for Codex sessions that run these skills. For source instal
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
-Codex review is split into distinct responsibilities. `codex-review-pass` is read-only: it launches the six review subagents (`code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, and `comment-analyzer`) and returns a normalized bundle. `pr-review-and-document` owns review publishing and writes that bundle through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers. `pr-review-resolver` is the interactive decision coordinator for unresolved findings and owns all resolver status updates. `codex-fix-worker` is resolver-managed only: it fixes exactly one selected issue with bounded owned files and never writes the review comment/cache directly.
+Codex review is split into distinct responsibilities. `codex-review-pass` is read-only: it launches the six review subagents (`code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, and `comment-analyzer`) and returns a normalized bundle. `pr-review-and-document` owns review publishing and writes that bundle through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers. `gemini-review-integrator` merges Gemini Code Assist feedback into that same canonical comment. `pr-review-resolver` is the interactive decision coordinator for unresolved findings and owns all resolver status updates. `codex-fix-worker` is resolver-managed only: it fixes exactly one selected issue with bounded owned files and never writes the review comment/cache directly.
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
@@ -130,6 +131,14 @@ Resolve existing review findings one by one with Codex. The resolver discusses e
 
 ```
 Resolve PR review findings with Codex
+```
+
+### Codex Gemini Review Integrator
+
+Integrate Gemini Code Assist inline review comments into the canonical PR review comment:
+
+```
+Integrate Gemini review comments with Codex
 ```
 
 ### Gemini Review Integrator
