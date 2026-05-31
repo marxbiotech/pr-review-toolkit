@@ -56,7 +56,7 @@ This repository also includes a repo-scoped Codex marketplace at `.agents/plugin
 | **codex-review-pass** | Run six read-only Codex review subagents in parallel and return one deduplicated review bundle |
 | **pr-review-and-document** | Publish the Codex review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
 | **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
-| **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
+| **codex-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
 
 Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at the packaged plugin directory (`"./plugins/pr-review-toolkit"`), and the manifest there points Codex at `./codex/skills/` (relative to that plugin root), so keep the repository layout intact:
 
@@ -75,7 +75,7 @@ Set the toolkit root for Codex sessions that run these skills. For source instal
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
-Codex review is split into distinct responsibilities. `codex-review-pass` is read-only: it launches the six review subagents (`code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, and `comment-analyzer`) and returns a normalized bundle. `pr-review-and-document` owns review publishing and writes that bundle through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers. `pr-review-resolver` is the interactive decision coordinator for unresolved findings. `codex-fix-worker` is different: it fixes exactly one selected issue with bounded owned files.
+Codex review is split into distinct responsibilities. `codex-review-pass` is read-only: it launches the six review subagents (`code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, and `comment-analyzer`) and returns a normalized bundle. `pr-review-and-document` owns review publishing and writes that bundle through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers. `pr-review-resolver` is the interactive decision coordinator for unresolved findings and owns all resolver status updates. `codex-fix-worker` is resolver-managed only: it fixes exactly one selected issue with bounded owned files and never writes the review comment/cache directly.
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 

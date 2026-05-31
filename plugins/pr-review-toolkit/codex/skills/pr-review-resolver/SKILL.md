@@ -15,7 +15,7 @@ This skill is a resolver and coordinator, not a review producer and not a single
 
 - `pr-review-and-document` creates or updates review findings.
 - `codex-review-pass` produces read-only review bundles.
-- `codex-fix-worker` fixes exactly one selected issue with bounded owned files.
+- `codex-fix-worker` fixes exactly one selected issue with bounded owned files and reports results back to the resolver.
 - `pr-review-resolver` reads unresolved issues, asks the user how to handle each one, coordinates fix workers or inline status decisions, and updates the canonical review comment.
 
 Use `.pr-review-cache/pr-#.json` as the only review state file. Do not create extra cache files or PR comments. Do not commit, push, merge, or directly call `gh api` to update comments.
@@ -81,7 +81,7 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
 6. For user-approved fixes:
    - Identify owned files from the issue and source inspection.
    - Check for overlap with any in-progress fix worker. Do not run two workers with overlapping owned files concurrently.
-   - Spawn or invoke bounded fix work using the `codex-fix-worker` contract. Provide PR number, source, issue title, file references, user decision, and owned files.
+   - Spawn or invoke bounded fix work using the managed-only `codex-fix-worker` contract. Provide PR number, source, issue title, file references, user decision, and owned files.
    - Track `{issue title, source, owned files, worker id/status}` in memory.
    - Continue discussing later issues only when doing so does not require the same files.
 7. For Deferred or N/A decisions:
@@ -154,9 +154,9 @@ Do not continue to the next issue until the user chooses.
 
 ## Relationship To codex-fix-worker
 
-`codex-fix-worker` is not the resolver. Use it only after the user chooses Fix for a specific issue and owned files are known. The resolver remains responsible for the user-facing discussion, conflict coordination, final status table, and any Deferred/N/A decisions.
+`codex-fix-worker` is not the resolver. Use it only after the user chooses Fix for a specific issue and owned files are known. It is always resolver-managed: it edits code and reports validation, but never updates review comments or `.pr-review-cache`.
 
-If a fix worker updates the review comment itself, re-read the latest cache before applying the resolver's final updates. Do not overwrite newer status changes.
+The resolver remains responsible for the user-facing discussion, conflict coordination, final status table, Deferred/N/A decisions, and all canonical review comment updates.
 
 ## Comment Update Rules
 

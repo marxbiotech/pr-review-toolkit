@@ -332,7 +332,7 @@ codex:<file>:<symbol-or-nearest-heading>:<diagnostic-kind>:<snippet-hash>
 
 ## codex-fix-worker
 
-`codex-fix-worker` 是 Codex 的 bounded implementation skill。它修復 dev agent 指派的一個 review issue，並更新同一份 canonical review comment 中該 issue 的狀態。
+`codex-fix-worker` 是 Codex 的 resolver-managed bounded implementation skill。它只修復 `pr-review-resolver` 指派的一個 review issue，並回報修改檔案、validation 與剩餘風險。它不更新 canonical review comment，也不讀寫 `.pr-review-cache`。
 
 必要輸入：
 
@@ -346,31 +346,31 @@ Decision:
 Fix using approach X.
 Owned files:
 - path/to/file.ts
+Resolver context:
+This issue was selected by the user in pr-review-resolver.
 ```
 
 工作流程：
 
-1. 讀取 `.pr-review-cache/pr-#.json`，確認目標 issue 仍是 `⚠️` 或 `🔴`
-2. 將 metadata in-memory upgrade 到 `1.1`
-3. 只修改 owned files；若必須修改其他檔案，停止並回報 dev agent
-4. 執行相關驗證，例如測試、lint、`git diff --check`
-5. 修完後重新讀取最新 cache，並使用 compare-and-swap 或 dev-agent 序列化避免覆蓋其他 tool 更新
-6. 將該 issue 狀態改為 `✅`，補上修復摘要與 validation
-7. 保持既有 `review_round` 不變
-8. 使用 `cache-write-comment.sh --stdin` 寫回
-9. 回報 modified files、validation result、remaining risk、commit message draft
+1. 確認 issue、使用者選擇的修復方案與 owned files 都存在。
+2. 閱讀 referenced code 與必要的鄰近 context。
+3. 只修改 owned files；若必須修改其他檔案，停止並回報 `pr-review-resolver` 要求擴大 scope。
+4. 執行相關驗證，例如測試、lint、`git diff --check`、script syntax check。
+5. 回報 modified files、validation result、fix summary、remaining risk、commit message draft。
 
 `codex-fix-worker` 可以：
 
 - 修改 code
-- 更新該 issue 的狀態與修復說明
-- 更新 summary counts 與 metadata timestamp
+- 執行 targeted validation
+- 回報修復結果給 `pr-review-resolver`
 
 `codex-fix-worker` 不可以：
 
 - 自行把 issue 標記為 Deferred 或 N/A
+- 讀寫 `.pr-review-cache`
+- 呼叫 `cache-read-comment.sh` 或 `cache-write-comment.sh`
+- 更新 canonical review comment 或 metadata
 - 修改無關 issue 狀態
-- 重寫整份 review comment 架構
 - 建立新 cache 檔或新 PR comment
 - commit、push、merge
 
@@ -384,7 +384,7 @@ Validation:
 - npm test -- ...
 
 Review comment update:
-- Marked "[Codex] Missing error propagation" as fixed.
+- None. pr-review-resolver updates the canonical review comment.
 
 Commit message draft:
 fix(scope): address missing error propagation
@@ -393,7 +393,7 @@ Remaining risk:
 - ...
 ```
 
-dev agent 或人類負責 commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
+`pr-review-resolver`、dev agent 或人類負責更新 review comment、commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
 
 ## Codex pr-review-resolver
 
@@ -409,7 +409,7 @@ Codex `pr-review-resolver` 是互動式決策協調器，不是 `codex-fix-worke
    - unchecked Action Plan items
 3. 每次只處理一個 issue，以繁中說明問題、影響、檔案位置與選項。
 4. 等待使用者決定：Fix / Deferred / N/A / Skip。
-5. 若使用者選擇 Fix，確認 owned files 後才派發 bounded fix work；可使用 `codex-fix-worker` contract 修單一 issue。
+5. 若使用者選擇 Fix，確認 owned files 後才派發 bounded fix work；使用 managed-only `codex-fix-worker` contract 修單一 issue。
 6. 若使用者選擇 Deferred 或 N/A，記錄自包含的 Design Decision 註解，避免依賴 PR link。
 7. 統一更新 canonical review comment 狀態、summary counts、metadata `last_writer: pr-review-resolver`，並保持 `review_round` 不變。
 8. 一律透過 `cache-write-comment.sh --stdin --expected-content-hash` 寫回，不直接使用 `gh api`。
@@ -419,7 +419,7 @@ Codex `pr-review-resolver` 是互動式決策協調器，不是 `codex-fix-worke
 | Skill | 職責 | 是否和使用者逐一討論 | 是否修 code | 是否更新整體 resolver 狀態 |
 |---|---|---:|---:|---:|
 | `pr-review-resolver` | 互動式 issue 決策與狀態協調 | 是 | 可協調 worker | 是 |
-| `codex-fix-worker` | 修一個已決策 issue | 否 | 是 | 只更新該 issue |
+| `codex-fix-worker` | 修一個已決策 issue | 否 | 是 | 否，只回報 resolver |
 
 `pr-review-resolver` 不應跳過使用者決策，也不應自行將 issue 標記 Deferred / N/A。若多個修復會修改同一檔案，resolver 必須序列化或等待前一個 worker 完成，避免並行修改衝突。
 
