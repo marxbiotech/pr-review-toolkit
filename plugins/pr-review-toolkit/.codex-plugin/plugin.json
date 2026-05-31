@@ -1,7 +1,7 @@
 {
   "name": "pr-review-toolkit",
   "version": "2.0.2",
-  "description": "PR review workflow skills for Codex: review passes and bounded fixes that share state through .pr-review-cache/pr-#.json and the canonical PR review comment.",
+  "description": "PR review workflow skills for Codex: parallel review passes, documented PR comments, and bounded fixes that share state through .pr-review-cache/pr-#.json.",
   "author": {
     "name": "MarxBiotech",
     "email": "xin@marxbiotech.com",
@@ -20,8 +20,8 @@
   "skills": "./codex/skills/",
   "interface": {
     "displayName": "PR Review Toolkit",
-    "shortDescription": "Run Codex PR reviews and fix selected findings through the shared review cache and one canonical comment.",
-    "longDescription": "Codex skills for participating in the pr-review-toolkit workflow. The skills use .pr-review-cache/pr-#.json as the only review state contract and reuse the repository's shared cache/comment helper scripts.",
+    "shortDescription": "Run parallel Codex PR reviews, document findings in one canonical comment, and fix selected issues.",
+    "longDescription": "Codex skills for participating in the pr-review-toolkit workflow. codex-review-pass launches six read-only review subagents and returns a deduplicated bundle; pr-review-and-document publishes that bundle through the shared .pr-review-cache/pr-#.json contract; codex-fix-worker fixes selected findings.",
     "developerName": "MarxBiotech",
     "category": "Productivity",
     "capabilities": [
@@ -30,7 +30,8 @@
     ],
     "websiteURL": "https://github.com/marxbiotech/pr-review-toolkit",
     "defaultPrompt": [
-      "Run a Codex PR review pass.",
+      "Run a Codex PR review pass with six subagents.",
+      "Review this PR and document the results.",
       "Fix one selected PR review issue.",
       "Update the canonical PR review comment."
     ],

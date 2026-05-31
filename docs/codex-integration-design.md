@@ -17,6 +17,7 @@ pr-review-and-document
 
 ```text
 codex-review-pass
+pr-review-and-document
 codex-fix-worker
 ```
 
@@ -91,9 +92,9 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
 ```json
 {
   "schema_version": "1.1",
-  "created_by": "codex-review-pass",
-  "last_writer": "codex-review-pass",
-  "skill": "codex-review-pass",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
+  "skill": "pr-review-and-document",
   "review_round": 1,
   "created_at": "2026-04-30T12:00:00Z",
   "updated_at": "2026-04-30T12:00:00Z",
@@ -117,6 +118,7 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
     "codex": {
       "last_reviewed_head": "abc123",
       "last_reviewed_at": "2026-04-30T12:00:00Z",
+      "agents_run": ["code-reviewer", "code-simplifier", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "comment-analyzer"],
       "posted_finding_ids": []
     }
   }
@@ -125,7 +127,7 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
 
 `created_by` 表示第一次建立 canonical review comment 的 producer。`last_writer` 表示最後一次更新 comment 的 skill。`skill` 是 legacy 欄位；bootstrap 時設為 `last_writer`（也就是與 `created_by` 相同），append/upgrade 既有 1.0 comment 時可保留舊值一個過渡 release。新版邏輯應優先讀取 `review_sources`。
 
-`review_round` 是 PR-global review producer 輪次，不是 per-source 輪次。`pr-review-and-document` 與 `codex-review-pass` 這類 review producer 在產生含有新增 findings 的 review pass 時應 increment；空 review pass 只更新 source timestamp，不 increment。`gemini-review-integrator` 只整合外部 comment，不 increment；`codex-fix-worker` 與 `pr-review-resolver` 只修復或更新狀態，也不 increment。
+`review_round` 是 PR-global review producer 輪次，不是 per-source 輪次。Claude/Codex `pr-review-and-document` 這類會發布 review results 的 producer 在產生含有新增 findings 的 review pass 時應 increment；空 review pass 只更新 source timestamp，不 increment。`codex-review-pass` 只產生 read-only review bundle，不直接 increment。`gemini-review-integrator` 只整合外部 comment，不 increment；`codex-fix-worker` 與 `pr-review-resolver` 只修復或更新狀態，也不 increment。
 
 `Reviewer Sources` 顯示行是由 metadata 派生的 UI 字串，依固定順序 `Claude, Gemini, Codex` 列出有參與的 source。參與判斷：Claude/Codex 使用 `last_reviewed_at != null`，Gemini 使用 `last_integrated_at != null` 或 `consumed_comment_ids` 非空。
 
@@ -150,13 +152,25 @@ review-metadata-replace.sh --stdin --metadata-file <metadata-json-file>
 | `agents_run` | `review_sources.claude.agents_run` | 搬移到 Claude source；Phase 2 寫入時 top-level 與 nested 同時保留，read 時優先 nested；移除 top-level 必須另開 release 並寫入 release notes |
 | `gemini_integrated_ids` | `review_sources.gemini.consumed_comment_ids` | numeric GitHub comment IDs；避免與 Codex finding IDs 混淆 |
 | `gemini_integration_date` | `review_sources.gemini.last_integrated_at` | 保留整合時間 |
+| 無 | `review_sources.codex.agents_run` | Codex review pass 實際完成的六個 read-only subagents |
 | 無 | `review_sources.codex.posted_finding_ids` | Codex 自產 finding IDs |
 
 不支援 downgrade。多來源 metadata 上線後，不應再使用舊版 Claude skills 寫回同一個 PR review comment，否則可能抹掉 `review_sources` 與 `[Codex]` issues。
 
 ## codex-review-pass
 
-`codex-review-pass` 是 Codex 的 review producer。它必須支援兩種模式。
+`codex-review-pass` 是 Codex 的 read-only review producer。它負責像 Claude `review-pr` 一樣同時啟動六個 review subagents，彙整結果，並回傳 normalized review bundle。它不負責建立 comment、更新 `.pr-review-cache`、修改 metadata、commit 或 push。
+
+六個 subagents 固定為：
+
+- `code-reviewer`
+- `code-simplifier`
+- `silent-failure-hunter`
+- `type-design-analyzer`
+- `pr-test-analyzer`
+- `comment-analyzer`
+
+每個 subagent 只讀 PR diff / working tree / existing review context，回傳 findings。主 `codex-review-pass` 去重、分類 severity、產生 finding IDs，並把結果交給 `pr-review-and-document`。
 
 ### Environment Contract
 
@@ -177,17 +191,30 @@ PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 
 不要在 Codex skill 中使用 `${CLAUDE_PLUGIN_ROOT}`；那是 Claude Code plugin runtime 的環境變數。
 
+### Review Bundle
+
+`codex-review-pass` 的輸出必須可被 `pr-review-and-document` 直接消費：
+
+```text
+Codex review bundle:
+- PR number
+- Head SHA
+- Agents completed
+- New findings grouped by critical / important / suggestion
+- Strengths
+- Type ratings
+- Follow-up notes
+```
+
+## Codex pr-review-and-document
+
+Codex `pr-review-and-document` 是 comment/cache/documentation owner。它負責呼叫 `codex-review-pass`，接收六 subagent 彙整後的 review bundle，並把結果寫入 canonical PR review comment。
+
+它支援兩種模式。
+
 ### Bootstrap Mode
 
 當尚未存在 canonical PR review comment 時，Codex 可以成為第一步：
-
-```text
-codex-review-pass
-→ creates canonical PR review comment
-→ creates .pr-review-cache/pr-#.json through cache-write-comment.sh
-```
-
-判斷方式：
 
 ```bash
 PR_NUMBER=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/get-pr-number.sh")
@@ -210,9 +237,9 @@ Bootstrap comment 必須使用既有 marker：
 <!-- pr-review-metadata
 {
   "schema_version": "1.1",
-  "created_by": "codex-review-pass",
-  "last_writer": "codex-review-pass",
-  "skill": "codex-review-pass",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
+  "skill": "pr-review-and-document",
   "review_round": 1,
   "review_sources": {
     "claude": { "last_reviewed_head": null, "last_reviewed_at": null, "agents_run": [] },
@@ -220,6 +247,7 @@ Bootstrap comment 必須使用既有 marker：
     "codex": {
       "last_reviewed_head": "abc123",
       "last_reviewed_at": "2026-04-30T12:00:00Z",
+      "agents_run": ["code-reviewer", "code-simplifier", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "comment-analyzer"],
       "posted_finding_ids": ["codex:src/foo.ts:symbol-name:error-propagation:abcd1234"]
     }
   }
@@ -259,12 +287,12 @@ Bootstrap comment 必須使用既有 marker：
 
 1. 讀取現有 metadata 與 issue sections
 2. 將 metadata in-memory upgrade 到 `1.1`
-3. review 目前 PR diff / working tree
-4. 產生 finding ID
+3. 呼叫 `codex-review-pass` review 目前 PR diff / working tree，並取得 normalized review bundle
+4. 使用 review bundle 中的 finding ID
 5. 依 `review_sources.codex.posted_finding_ids` 與現有 section 內容去重
 6. 只插入新的 Codex findings
 7. 若有新增 finding，increment PR-global `review_round`；若沒有新發現，只更新 `last_reviewed_head` / `last_reviewed_at`，不 increment
-8. 更新 summary counts、`updated_at`、`last_writer`、`review_sources.codex`
+8. 更新 summary counts、`updated_at`、`last_writer: pr-review-and-document`、`review_sources.codex`
 9. 透過 `cache-write-comment.sh --stdin` 寫回
 
 Codex finding 一律標示來源：
@@ -373,7 +401,7 @@ Claude-first workflow：
 ```text
 Claude:    pr-review-and-document
 Claude:    gemini-review-integrator
-Codex:     codex-review-pass
+Codex:     pr-review-and-document
 Codex:     codex-fix-worker for selected issues
 dev agent: commit fix-worker changes
 Claude:    pr-review-resolver when human decision is needed
@@ -382,7 +410,7 @@ Claude:    pr-review-resolver when human decision is needed
 Codex-first workflow：
 
 ```text
-Codex:     codex-review-pass
+Codex:     pr-review-and-document
 Claude:    gemini-review-integrator
 Codex:     codex-fix-worker for selected issues
 dev agent: commit fix-worker changes
@@ -422,6 +450,16 @@ plugins/pr-review-toolkit/
 ├── codex/
 │   └── skills/
 │       ├── codex-review-pass/
+│       │   ├── references/
+│       │   │   └── agents/
+│       │   │       ├── code-reviewer.md
+│       │   │       ├── code-simplifier.md
+│       │   │       ├── silent-failure-hunter.md
+│       │   │       ├── type-design-analyzer.md
+│       │   │       ├── pr-test-analyzer.md
+│       │   │       └── comment-analyzer.md
+│       │   └── SKILL.md
+│       ├── pr-review-and-document/
 │       │   └── SKILL.md
 │       └── codex-fix-worker/
 │           └── SKILL.md
@@ -465,8 +503,9 @@ Phase 2 must ship Claude compatibility updates and Codex skill scaffolding toget
 - Update `gemini-review-integrator` to migrate and preserve `review_sources`
 - Update `pr-review-resolver` to recognize `[Codex]` issues and untagged Claude issues
 - Add `codex/skills/codex-review-pass/SKILL.md`
+- Add `codex/skills/pr-review-and-document/SKILL.md`
 - Add `codex/skills/codex-fix-worker/SKILL.md`
-- Ensure both Codex skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state
+- Ensure Codex write-capable skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state
 
 ### Phase 3: Packaging
 
