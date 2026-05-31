@@ -69,8 +69,8 @@ If owned files or the user decision are missing, stop and ask the resolver for t
 1. Confirm the target issue, user-selected fix approach, and owned files are present.
 2. Inspect the referenced code and directly related context.
 3. Edit only the owned files. If another file must change, stop and report the required expansion to `pr-review-resolver`.
-4. Run targeted validation such as tests, lint, `git diff --check`, script syntax checks, or framework-specific checks relevant to the changed files.
-5. Report files changed, validation results, fix summary, and remaining risk to `pr-review-resolver`.
+4. Run targeted validation such as tests, lint, `git diff --check`, script syntax checks, or framework-specific checks relevant to the changed files. Capture each validation command and its exit code. If no validation is possible for this change (e.g. pure documentation edit, no covering test exists), say so explicitly under `Validation:` — never leave it empty.
+5. Compute the `Status:` field per the contract below and report files changed, validation results, fix summary, status, and remaining risk to `pr-review-resolver`.
 
 Do not update metadata. Do not mark the review issue as fixed. Do not write the canonical review comment. The resolver will update status after it reviews this worker's result.
 
@@ -83,7 +83,11 @@ Files changed:
 - path/to/file.ts
 
 Validation:
-- command and result
+- <command> — exit <N>
+- <command> — exit <N>
+- (or) none possible: <reason>
+
+Status: success | partial | failed
 
 Fix summary:
 - ...
@@ -97,5 +101,13 @@ fix(scope): address issue title
 Remaining risk:
 - ...
 ```
+
+`Status` semantics — the resolver parses this line and uses it to decide whether to mark `✅ Fixed`:
+
+- `success`: the change addresses the issue and every validation command exited `0`.
+- `partial`: the change addresses the issue but at least one validation command exited non-zero, was skipped, was not available, or only partially passed. Explain the gap in `Remaining risk`.
+- `failed`: the change does not address the issue (e.g. could not be applied within owned files, attempted fix introduced a regression).
+
+Never report `Status: success` when any validation entry has a non-zero exit code or when validation was attempted but unavailable. The resolver treats `partial` as "ask the user" and `failed` as "do not mark fixed".
 
 The resolver, dev agent, or human is responsible for committing and pushing. Do not start another review pass before the code changes are committed or intentionally left uncommitted by the dev agent.

@@ -41,10 +41,10 @@ Use only these scripts for review state:
 
 ```bash
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/get-pr-number.sh"
-"${PR_REVIEW_TOOLKIT_ROOT}/scripts/find-review-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/fetch-gemini-comments.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -54,8 +54,7 @@ Before running the workflow, verify these helper scripts are executable and `scr
 ## Workflow
 
 1. Get the PR number with `get-pr-number.sh`.
-2. Verify a canonical review comment exists with `find-review-comment.sh "$PR_NUMBER"`. If none exists, tell the user to run `pr-review-and-document` first.
-3. Read the canonical review comment with `cache-read-comment.sh "$PR_NUMBER"`:
+2. Read the canonical review comment with `cache-read-comment.sh "$PR_NUMBER"`:
 
    ```bash
    set +e
@@ -70,19 +69,42 @@ Before running the workflow, verify these helper scripts are executable and `scr
    esac
    ```
 
-4. Read `.pr-review-cache/pr-${PR_NUMBER}.json` and save `.content_hash` as `EXPECTED_CONTENT_HASH`.
-5. Fetch Gemini comments:
+   `cache-read-comment.sh` exits `2` if no canonical comment exists — there is no need for a separate `find-review-comment.sh` precheck (it would return empty stdout with rc=0 and silently look like success).
+3. Extract the cache `content_hash` for CAS:
 
    ```bash
-   GEMINI_COMMENTS=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/fetch-gemini-comments.sh" "$PR_NUMBER")
+   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
    ```
 
-6. Filter comments:
+   The hash must match `^sha256:[0-9a-f]{64}$` (`cache-write-comment.sh:36-44`). If the field is missing or malformed, abort and run `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER" --force-refresh` before retrying.
+4. Fetch Gemini comments with explicit error handling. The script can fail for several reasons (gh auth expired, GitHub 5xx, network timeout, malformed PR) — collapsing those into "no Gemini comments" silently masks integration failures:
+
+   ```bash
+   set +e
+   GEMINI_RAW=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/fetch-gemini-comments.sh" "$PR_NUMBER")
+   gemini_rc=$?
+   set -e
+
+   if [ "$gemini_rc" -ne 0 ]; then
+     echo "Error: fetch-gemini-comments.sh failed (rc=$gemini_rc). Stopping integration; the canonical comment is unchanged." >&2
+     exit "$gemini_rc"
+   fi
+
+   if ! printf '%s' "$GEMINI_RAW" | jq -e 'type == "array"' >/dev/null 2>&1; then
+     echo "Error: fetch-gemini-comments.sh returned non-array JSON. Stopping integration." >&2
+     exit 2
+   fi
+
+   GEMINI_COMMENTS="$GEMINI_RAW"
+   ```
+
+   An empty array (`[]`) is a valid "no Gemini comments yet" result and must be reported distinctly from a fetch failure.
+5. Filter comments:
    - Exclude `is_outdated: true`.
    - Prefer existing metadata `review_sources.gemini.consumed_comment_ids`.
    - Fall back to legacy `gemini_integrated_ids`.
    - Exclude IDs already consumed.
-7. Categorize new Gemini comments:
+6. Categorize new Gemini comments:
 
    | Gemini priority | Category |
    |---|---|
@@ -92,9 +114,10 @@ Before running the workflow, verify these helper scripts are executable and `scr
    | `medium` | `suggestion` |
    | `low` | `suggestion` |
 
-8. Format each new Gemini issue:
+   Unknown priority values must not be silently dropped. Categorize them as `suggestion` and add a non-canonical follow-up note naming the unknown priority so it can be triaged later.
+7. Format each new Gemini issue. The outer markdown example uses **four backticks** so the inner `suggestion` fence (three backticks) is not consumed as the closing delimiter:
 
-   ```markdown
+   ````markdown
    <details>
    <summary><b>N. ⚠️ [Gemini] Issue title</b></summary>
 
@@ -110,30 +133,55 @@ Before running the workflow, verify these helper scripts are executable and `scr
    ```
 
    </details>
-   ```
+   ````
 
    Preserve Gemini's suggestion block when present. Keep content concise enough that the final PR comment stays below GitHub limits.
-9. Insert new Gemini issues into the canonical severity sections:
+8. Insert new Gemini issues into the canonical severity sections:
    - `### 🔴 Critical Issues`
    - `### 🟡 Important Issues`
    - `### 💡 Suggestions`
-10. Renumber affected issue sections and update summary counts. Preserve existing issue statuses.
-11. Upgrade metadata to schema `1.1`:
+9. Renumber affected issue sections and update summary counts. Preserve existing issue statuses.
+10. Upgrade metadata to schema `1.1`:
 
-   ```bash
-   METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh" --stdin --last-writer gemini-review-integrator)
-   ```
+    ```bash
+    METADATA_JSON=$(printf '%s\n' "$EXISTING_CONTENT" \
+      | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh" \
+          --stdin --last-writer gemini-review-integrator)
+    ```
 
-12. Dual-write Gemini metadata during the compatibility window:
-   - Add newly consumed integer IDs to `review_sources.gemini.consumed_comment_ids`.
-   - Add the same IDs to legacy `gemini_integrated_ids`.
-   - Set both `review_sources.gemini.last_integrated_at` and legacy `gemini_integration_date` to the current UTC timestamp.
-   - Set `last_writer` / `skill` as appropriate for `gemini-review-integrator`.
-   - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues.
-   - Keep `review_round` unchanged. Gemini integration is not a review producer.
-13. Replace the hidden metadata block with `review-metadata-replace.sh`.
-14. Write through `cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"`.
-15. If `cache-write-comment.sh` exits `4`, re-read the latest comment, merge only the new Gemini integrations, and retry once. If it still exits `4`, report the CAS conflict and stop.
+11. Dual-write Gemini metadata during the compatibility window:
+    - Add newly consumed integer IDs to `review_sources.gemini.consumed_comment_ids`.
+    - Add the same IDs to legacy `gemini_integrated_ids`.
+    - Set both `review_sources.gemini.last_integrated_at` and legacy `gemini_integration_date` to the current UTC timestamp.
+    - Set `last_writer` / `skill` as appropriate for `gemini-review-integrator`.
+    - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues.
+    - Keep `review_round` unchanged. Gemini integration is not a review producer.
+12. Replace the hidden metadata block with `review-metadata-replace.sh`. The script requires a metadata JSON file path; pipe the comment over stdin:
+
+    ```bash
+    METADATA_FILE=$(mktemp)
+    trap 'rm -f "$METADATA_FILE"' EXIT
+    printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+    UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" \
+      | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh" \
+          --stdin --metadata-file "$METADATA_FILE")
+    ```
+
+13. Write through `cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"`:
+
+    ```bash
+    printf '%s\n' "$UPDATED_CONTENT" \
+      | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh" \
+          --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"
+    ```
+
+14. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
+    - `0`: success.
+    - `1`: GitHub sync failed but local cache is up to date; recommend `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"`.
+    - `2`: local error; abort.
+    - `3`: remote is newer; re-read with `cache-sync.sh "$PR_NUMBER" --force-refresh`, then redo Steps 2-13 against the fresh content.
+    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$EXISTING_CONTENT`, re-run Step 3 to recapture `EXPECTED_CONTENT_HASH`, re-merge only the new Gemini integrations into the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` with the current content hash and stop.
 
 ## Gemini Comment Handling
 

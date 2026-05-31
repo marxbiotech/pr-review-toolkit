@@ -72,15 +72,17 @@ fi
    - `type-design-analyzer.md`
    - `pr-test-analyzer.md`
    - `comment-analyzer.md`
-4. Spawn six read-only `explorer` subagents in parallel, one per reference prompt. Each subagent task is the reference prompt plus the shared review packet.
+4. Spawn six read-only subagents in parallel, one per reference prompt. Each subagent task is the reference prompt plus the shared review packet.
+
+   "Read-only subagent" is the Codex-runtime concept of a subagent that has no write tools attached. In Codex CLI versions that expose subagent kinds (e.g. `explorer`), use the read-only kind; in runtimes that only attach tools per call, simply omit edit/cache/comment tools when invoking the subagent. The contract is the constraint set in step 5, not the specific subagent-kind label.
 5. Each subagent must return findings only. Subagents must not edit files, write cache files, post comments, run `gh api`, or update metadata.
-6. Wait for all six subagents. If one fails, include a non-canonical follow-up note naming the failed aspect; do not silently omit it.
+6. Wait for all six subagents. If one fails, include a non-canonical follow-up note naming the failed aspect; do not silently omit it. Always emit the `Agents completed:` line as the actually-successful set so `pr-review-and-document` can refuse to publish a partial bundle.
 7. Aggregate results:
    - Drop duplicates already present in the existing review comment.
    - Merge duplicates between subagents into one finding with all relevant sources listed.
    - Keep only actionable findings with concrete file references and fixes.
    - Classify each finding as `critical`, `important`, or `suggestion`.
-   - Generate stable finding IDs.
+   - Generate stable finding IDs (see Finding Format below).
 8. Return the normalized review bundle described below. Do not publish it.
 
 ## Reference Prompts
@@ -110,7 +112,15 @@ problem: concise explanation
 fix: concrete recommended change
 ```
 
-Finding IDs are best-effort and should not rely only on line numbers.
+Finding ID grammar (used as the dedup key in `review_sources.codex.posted_finding_ids`):
+
+- Prefix is the literal string `codex`.
+- `<file>` is the repo-relative path of the issue. Repo paths in this project do not contain `:`; if a future producer needs to embed paths that may contain `:`, percent-encode the `:` (`%3A`) so the colon delimiter remains unambiguous.
+- `<symbol-or-nearest-heading>` is the smallest enclosing function, class, or markdown heading. If none applies, use the literal `_`.
+- `<diagnostic-kind>` is the kebab-case category emitted by the subagent (e.g. `error-handling`, `type-design`, `comment-accuracy`).
+- `<snippet-hash>` is the first 8 lowercase hex chars of `sha1` over the whitespace-collapsed text of the smallest enclosing statement or paragraph. The hash is intentionally line-number-independent so trivial reflow does not invalidate the ID.
+
+Finding IDs are best-effort. If a duplicate slips through, mark it as duplicate only when the dev agent or resolver asks.
 
 ## Output Contract
 

@@ -45,6 +45,7 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/get-pr-number.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -69,7 +70,13 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    esac
    ```
 
-3. Read `.pr-review-cache/pr-${PR_NUMBER}.json` and save `.content_hash` as `EXPECTED_CONTENT_HASH`.
+3. Extract the cache `content_hash` for CAS:
+
+   ```bash
+   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
+   ```
+
+   The hash must match `^sha256:[0-9a-f]{64}$` (`cache-write-comment.sh:36-44`). If the field is missing or malformed, abort and run `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER" --force-refresh` before retrying.
 4. Parse unresolved items from the review content.
 5. For each unresolved issue, one at a time:
    - Present the issue in Traditional Chinese.
@@ -91,20 +98,68 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
      Design Decision: <complete reason; do not rely on PR links>
      ```
    - Mark the item as `⏭️ Deferred` or `⏭️ N/A` in the planned comment update.
-8. After all issues have decisions, collect fix worker results:
-   - Successful fix: mark only that issue as `✅ Fixed` and include a concise fix/validation note.
-   - Failed fix: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A.
-9. Validate modified file scope with `git diff --name-only`. If unexpected files changed, stop and ask the user how to proceed.
+8. After all issues have decisions, collect fix worker results. Parse the worker's `Status:` line (see `codex-fix-worker` Output Contract); do not infer success from the presence of `Files changed:` alone:
+   - `Status: success`: mark only that issue as `✅ Fixed` and include a concise fix/validation note.
+   - `Status: partial`: report the validation gap in Traditional Chinese and ask the user whether to accept-as-fixed, retry, or defer.
+   - `Status: failed`: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A. Do not mark `✅ Fixed`.
+9. Validate modified file scope. Default `git diff --name-only` misses untracked new files and renames; use the explicit sequence below so an out-of-scope worker write cannot pass silently:
+
+   ```bash
+   # Build the actual changed set (tracked + staged + untracked).
+   ACTUAL=$( { git diff --name-only HEAD; git status --porcelain | awk '/^\?\?/ {print $2}'; } | sort -u )
+
+   # OWNED_FILES is the union of every owned-files list the resolver passed to fix-worker(s) this session.
+   EXPECTED=$(printf '%s\n' "${OWNED_FILES[@]}" | sort -u)
+
+   UNEXPECTED=$(comm -23 <(printf '%s\n' "$ACTUAL") <(printf '%s\n' "$EXPECTED"))
+   if [ -n "$UNEXPECTED" ]; then
+     echo "Unexpected files changed (not in any worker's owned set):" >&2
+     printf '  %s\n' $UNEXPECTED >&2
+     # Stop and ask the user before continuing.
+     exit 2
+   fi
+   ```
+
 10. Update the canonical review comment:
-   - Preserve all existing Claude, Gemini, and Codex issue sections.
-   - Preserve all issue text except the specific status/fix summary for resolved items.
-   - Treat untagged issues as Claude issues.
-   - Keep `review_round` unchanged.
-   - Update status indicators, summary counts, `updated_at`, and metadata `last_writer`.
-   - Upgrade metadata with `review-metadata-upgrade.sh --stdin --last-writer pr-review-resolver`.
-   - Replace only the hidden metadata block with `review-metadata-replace.sh`.
-   - Write through `cache-write-comment.sh --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"`.
-11. If `cache-write-comment.sh` exits `4`, re-read, merge resolver status updates into the newer content, and retry once. If it still exits `4`, report the CAS conflict and stop.
+    - Preserve all existing Claude, Gemini, and Codex issue sections.
+    - Preserve all issue text except the specific status/fix summary for resolved items.
+    - Treat untagged issues as Claude issues.
+    - Keep `review_round` unchanged.
+    - Update status indicators, summary counts, `updated_at`, and metadata `last_writer`.
+    - Upgrade metadata:
+
+      ```bash
+      METADATA_JSON=$(printf '%s\n' "$REVIEW_CONTENT" \
+        | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh" \
+            --stdin --last-writer pr-review-resolver)
+      ```
+
+    - After editing `$METADATA_JSON` (e.g. via `jq`), replace only the hidden metadata block. `review-metadata-replace.sh` requires a metadata JSON file path; pipe the comment over stdin:
+
+      ```bash
+      METADATA_FILE=$(mktemp)
+      trap 'rm -f "$METADATA_FILE"' EXIT
+      printf '%s' "$METADATA_JSON" > "$METADATA_FILE"
+
+      UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" \
+        | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh" \
+            --stdin --metadata-file "$METADATA_FILE")
+      ```
+
+    - Write through `cache-write-comment.sh`:
+
+      ```bash
+      printf '%s\n' "$UPDATED_CONTENT" \
+        | "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh" \
+            --stdin "$PR_NUMBER" --expected-content-hash "$EXPECTED_CONTENT_HASH"
+      ```
+
+11. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
+    - `0`: success.
+    - `1`: GitHub sync failed but local cache is up to date; recommend `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"`.
+    - `2`: local error; abort.
+    - `3`: remote is newer; re-read with `cache-sync.sh "$PR_NUMBER" --force-refresh`, then redo Steps 2-10 against the fresh content.
+    - `4`: CAS hash mismatch. Re-run Step 2 (`cache-read-comment.sh`) to refresh `$REVIEW_CONTENT`, re-run Step 3 to recapture `EXPECTED_CONTENT_HASH`, re-apply only this resolver session's status updates to the newer content, and retry once. If the retry also exits `4`, report `CAS conflict: another writer holds the lock` and stop.
 12. Consider whether resolved decisions should update durable project guidance such as `AGENTS.md`, `CLAUDE.md`, or docs. Ask the user before making guidance changes.
 
 ## Unresolved Item Detection

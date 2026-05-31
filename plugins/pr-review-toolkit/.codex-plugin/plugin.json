@@ -30,12 +30,12 @@
     ],
     "websiteURL": "https://github.com/marxbiotech/pr-review-toolkit",
     "defaultPrompt": [
-      "Run a Codex PR review pass with six subagents.",
-      "Review this PR and document the results.",
-      "Integrate Gemini review comments.",
-      "Resolve PR review findings interactively.",
-      "Fix one selected PR review issue.",
-      "Update the canonical PR review comment."
+      "Run a Codex review pass",
+      "Run a Codex PR review and document the results",
+      "Integrate Gemini review comments with Codex",
+      "Resolve PR review findings with Codex",
+      "Fix one selected PR review issue",
+      "Update the canonical PR review comment"
     ],
     "brandColor": "#2563EB"
   }

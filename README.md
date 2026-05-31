@@ -86,6 +86,9 @@ ACP approval matching is a literal prefix match against the command Codex execut
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/get-pr-number.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-read-comment.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-write-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-sync.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/find-review-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/fetch-gemini-comments.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-replace.sh"]
 ["gh", "api"]
@@ -170,6 +173,8 @@ Or:
 
 ## Workflow
 
+### Claude flow
+
 ```mermaid
 graph LR
     A[Create PR] --> B[pr-review-and-document]
@@ -181,6 +186,28 @@ graph LR
     F --> G[Issues Resolved]
     G --> H[Merge PR]
 ```
+
+### Codex flow
+
+The Codex side splits the same workflow across five skills with a clear producer/publisher/integrator/resolver/worker boundary:
+
+```mermaid
+graph LR
+    A[Create PR] --> B[codex-review-pass]
+    B --> C[pr-review-and-document]
+    C --> D{Gemini reviewed?}
+    D -->|Yes| E[gemini-review-integrator]
+    D -->|No| F[pr-review-resolver]
+    E --> F
+    F -->|user picks Fix| G[codex-fix-worker]
+    G --> F
+    F --> H[Issues Resolved]
+    H --> I[Merge PR]
+```
+
+- `codex-review-pass` is read-only and returns a normalized review bundle.
+- `pr-review-and-document` is the only writer of the canonical PR comment / `.pr-review-cache/pr-#.json`.
+- `pr-review-resolver` owns user interaction and all status updates; it invokes `codex-fix-worker` (resolver-managed) to perform bounded code edits.
 
 ## PR Comment Structure
 
@@ -203,15 +230,23 @@ The PR review comment includes:
 
 ## Scripts
 
-The plugin includes shared scripts in `scripts/`:
+The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugins/pr-review-toolkit/scripts/` (packaged copy, byte-equal — CI enforces parity):
 
 | Script | Purpose |
 |--------|---------|
-| `find-review-comment.sh` | Find existing PR review comment by metadata marker |
-| `upsert-review-comment.sh` | Create or update PR review comment |
-| `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist comments |
+| `get-pr-number.sh` | Resolve the current branch's PR number via 1-hour `branch-map.json` cache, falling back to `gh` |
+| `find-review-comment.sh` | Find existing PR review comment by metadata marker (cache-first) |
+| `cache-read-comment.sh` | Read the canonical PR review comment from local cache, falling back to GitHub |
+| `cache-write-comment.sh` | Write the canonical comment to local cache and sync to GitHub (CAS via `--expected-content-hash`, retry on transient sync failure) |
+| `cache-sync.sh` | Re-sync local cache to GitHub or refresh cache from GitHub |
+| `cache-cleanup.sh` | Remove stale `.pr-review-cache/` entries |
+| `upsert-review-comment.sh` | Low-level GitHub create/update primitive used by `cache-write-comment.sh` (not called directly by skills) |
+| `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist inline comments |
 | `review-metadata-upgrade.sh` | Normalize PR review metadata to schema 1.1 |
 | `review-metadata-replace.sh` | Replace the hidden metadata block without changing issue sections |
+| `deploy-pr.sh` | PR deploy helper used by the `deploy-pr` skill |
+
+Skills should only call `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, and `review-metadata-replace.sh` directly. `find-review-comment.sh` and `upsert-review-comment.sh` are internal helpers used by the cache layer.
 
 ## License
 
