@@ -419,32 +419,43 @@ jobs:
           fail=0
           unique_refs=0
 
-          for skill_file in plugins/pr-review-toolkit/codex/skills/*/SKILL.md; do
+          # Enumerate SKILL.md files first so we can fail loudly if the glob
+          # matches zero (skill dir moved or renamed). nullglob + check-then-loop
+          # avoids the older anti-pattern where the lint silently passed by
+          # iterating zero items.
+          skill_files=(plugins/pr-review-toolkit/codex/skills/*/SKILL.md)
+          if [ "${#skill_files[@]}" -eq 0 ]; then
+            echo "::error::No Codex SKILL.md files found under plugins/pr-review-toolkit/codex/skills/*/ — has the skill directory moved?"
+            exit 1
+          fi
+
+          for skill_file in "${skill_files[@]}"; do
             # Extract every "${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh" reference
             # and dedupe (a skill may reference the same script several times).
             #
-            # The `|| true` on grep keeps pipefail from aborting when a SKILL.md
-            # has zero references (grep exits 1 → pipeline exits 1 → command
-            # substitution under set -euo pipefail aborts the whole step without
-            # ever reaching the "$refs" empty guard below). Without this, the
-            # first SKILL.md with no script refs (e.g. codex-fix-worker) breaks
-            # the whole lint with no diagnostic.
-            #
-            # Charset note: the regex covers lowercase, uppercase, digit, dot,
-            # underscore, dash so a typo'd "Cache-Read.sh" is checked (and fails)
-            # rather than being silently skipped.
-            refs=$( { grep -oE '\$\{PR_REVIEW_TOOLKIT_ROOT\}/scripts/[A-Za-z0-9._-]+\.sh' "$skill_file" || true; } \
+            # Capture grep's rc explicitly so only rc=1 (no match) is accepted as
+            # "skill file has zero refs". rc=2+ (file unreadable, permission
+            # denied, malformed regex, glob-no-match against literal pattern)
+            # must fail the lint loudly — wrapping with `|| true` would swallow
+            # those real errors and let a green checkmark mask "lint scanned
+            # zero bytes because the file was unreadable".
+            set +e
+            raw_refs=$(grep -oE '\$\{PR_REVIEW_TOOLKIT_ROOT\}/scripts/[A-Za-z0-9._-]+\.sh' "$skill_file")
+            grep_rc=$?
+            set -e
+            if [ "$grep_rc" -gt 1 ]; then
+              echo "::error::grep failed reading $skill_file (rc=$grep_rc); refusing to declare lint success."
+              exit "$grep_rc"
+            fi
+
+            refs=$(printf '%s\n' "$raw_refs" \
                    | sed 's|^\${PR_REVIEW_TOOLKIT_ROOT}/scripts/||' \
-                   | sort -u )
+                   | sort -u \
+                   | sed '/^$/d')
             [ -z "$refs" ] && continue
 
             while IFS= read -r script_name; do
-              # Defensive: skip whitespace-only/empty entries that could slip in
-              # if a future pipeline change produced them. With pipefail fixed
-              # above, [ -z "$refs" ] already covers strictly empty $refs, but
-              # whitespace-only would still iterate once with an empty name and
-              # then [ ! -x "scripts/" ] would silently pass (directories are
-              # executable).
+              # Defensive: skip whitespace-only/empty entries.
               [ -z "${script_name// /}" ] && continue
 
               unique_refs=$((unique_refs + 1))
@@ -461,7 +472,7 @@ jobs:
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "✅ All $unique_refs unique SKILL.md script references resolve in both trees"
+          echo "✅ All $unique_refs unique SKILL.md script references resolve in both trees (${#skill_files[@]} skill files scanned)"
 
       - name: Lock codex-fix-worker resolver-managed contract
         # codex-fix-worker is explicitly forbidden from touching review state.
@@ -472,12 +483,14 @@ jobs:
           worker_skill="plugins/pr-review-toolkit/codex/skills/codex-fix-worker/SKILL.md"
 
           # Forbidden names cover every script that could mutate review state
-          # (cache-(read|write)-comment, cache-sync, find-review-comment,
+          # (cache-(read|write|cleanup)-comment, cache-sync, find-review-comment,
           # review-metadata-{upgrade,replace}, upsert-review-comment) plus
-          # any `gh api` invocation. `cache-sync.sh` is named without a
-          # `-comment` suffix, so the alternation must list it explicitly —
-          # `cache-(...)-comment` alone would miss it.
-          forbidden_pattern='(cache-(read|write)-comment|cache-sync|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+          # any `gh api` invocation. `cache-sync.sh` and `cache-cleanup.sh` are
+          # named without a `-comment` suffix, so they're listed explicitly —
+          # `cache-(...)-comment` alone would miss them. `cache-cleanup` is
+          # included for defense-in-depth: a fix-worker that prunes the cache
+          # would still be touching review state.
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|cache-cleanup|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
 
           # Strip everything OUTSIDE fenced code blocks before scanning. Prose
           # can mention forbidden script names harmlessly (e.g. a "do NOT call
@@ -488,12 +501,14 @@ jobs:
           # Fence detection covers triple-backtick and triple-tilde fences with
           # up to 3 leading spaces (CommonMark-legal opening indent). 4-space
           # indented code blocks are intentionally NOT supported by this lint
-          # — do not use them in SKILL.md for invocation examples.
+          # in codex-fix-worker/SKILL.md — do not use them there for invocation
+          # examples. (Other SKILL.md files may use indented fences freely;
+          # this lint only scans codex-fix-worker.)
           if awk '
               /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
               in_fence { print }
             ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
-            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. codex-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. codex-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, cache-cleanup, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
             exit 1
           fi
           echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"

@@ -141,4 +141,10 @@ Codex review bundle:
   - ...
 ```
 
+**Bundle format invariants (consumed by `pr-review-and-document`):**
+
+- The `- Agents completed:` line **MUST be a single physical line** with no soft-wrap, no continuation. Names are comma-separated; whitespace around commas is allowed. This is the contract the downstream completeness check parses; a wrapped continuation line silently drops the wrapped agents and triggers a false "missing agents" abort.
+- All other top-level fields (`- PR number:`, `- Head SHA:`, `- New findings:`, etc.) also occupy a single physical line for their header.
+- Nested entries under `- New findings:`, `- Strengths:`, `- Type ratings:`, `- Follow-up notes:` are indented continuation bullets and may wrap freely.
+
 `pr-review-and-document` is responsible for converting this bundle into canonical markdown sections and writing it to the PR.

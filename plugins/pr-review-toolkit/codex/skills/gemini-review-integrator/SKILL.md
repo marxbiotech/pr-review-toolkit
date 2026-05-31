@@ -70,13 +70,28 @@ Before running the workflow, verify these helper scripts are executable and `scr
    ```
 
    `cache-read-comment.sh` exits `2` if no canonical comment exists — there is no need for a separate `find-review-comment.sh` precheck (it would return empty stdout with rc=0 and silently look like success).
-3. Extract the cache `content_hash` for CAS and validate it locally before relying on it:
+3. Extract the cache `content_hash` for CAS and validate it locally before relying on it. The snippet pins shell flags, checks file existence before invoking jq, and surfaces the recovery script's rc:
 
    ```bash
-   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
+   set -euo pipefail
+   CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+
+   if [ ! -f "$CACHE_FILE" ]; then
+     echo "Cache file missing: $CACHE_FILE — refreshing from GitHub..." >&2
+     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
+       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
+       exit 2
+     fi
+     exit 2
+   fi
+
+   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
    if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
      echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
-     "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"
+     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
+       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
+       exit 2
+     fi
      exit 2
    fi
    ```
@@ -183,10 +198,22 @@ Before running the workflow, verify these helper scripts are executable and `scr
 
 14. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file:
+    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag. Pin shell flags, check file existence first, and capture jq's rc so a missing or unreadable cache file cannot silently take the wrong branch:
 
       ```bash
-      STALE=$(jq -r '.stale_source_id // false' ".pr-review-cache/pr-${PR_NUMBER}.json")
+      set -euo pipefail
+      CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+
+      if [ ! -f "$CACHE_FILE" ]; then
+        echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
+        exit 1
+      fi
+
+      if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
+        echo "jq failed reading $CACHE_FILE: $STALE" >&2
+        exit 1
+      fi
+
       if [ "$STALE" = "true" ]; then
         echo "Post-sync cache repair failed; recover with ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
       else

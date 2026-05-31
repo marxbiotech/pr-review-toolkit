@@ -227,12 +227,19 @@ assert_jq "$bootstrap" '.last_writer' 'pr-review-and-document'
 assert_jq "$bootstrap" '.skill' 'pr-review-and-document'
 assert_jq "$bootstrap" '.review_sources.claude.last_reviewed_head' 'null'
 assert_jq "$bootstrap" '.review_sources.claude.last_reviewed_at' 'null'
+# `| type == "array"` pins array-vs-null. The earlier `| length` form returned
+# `0` for both `[]` and `null`, so a regression that dropped `arr()` coercion
+# from the jq filter would silently pass the count assertion.
+assert_jq "$bootstrap" '.review_sources.claude.agents_run | type' 'array'
 assert_jq "$bootstrap" '.review_sources.claude.agents_run | length' '0'
+assert_jq "$bootstrap" '.review_sources.gemini.consumed_comment_ids | type' 'array'
 assert_jq "$bootstrap" '.review_sources.gemini.consumed_comment_ids | length' '0'
 assert_jq "$bootstrap" '.review_sources.gemini.last_integrated_at' 'null'
 assert_jq "$bootstrap" '.review_sources.codex.last_reviewed_head' 'null'
 assert_jq "$bootstrap" '.review_sources.codex.last_reviewed_at' 'null'
+assert_jq "$bootstrap" '.review_sources.codex.posted_finding_ids | type' 'array'
 assert_jq "$bootstrap" '.review_sources.codex.posted_finding_ids | length' '0'
+assert_jq "$bootstrap" '.agents_run | type' 'array'
 assert_jq "$bootstrap" '.agents_run | length' '0'
 assert_jq "$bootstrap" '(.agents_run == .review_sources.claude.agents_run)' 'true'
 

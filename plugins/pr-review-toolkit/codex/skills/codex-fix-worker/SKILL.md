@@ -104,10 +104,16 @@ Remaining risk:
 
 `Status` semantics — the resolver parses this line and uses it to decide whether to mark `✅ Fixed`:
 
-- `success`: either (a) the change addresses the issue and every validation command exited `0`, OR (b) the change is a pure-documentation edit (no executable code paths touched) and every `Validation:` entry is `none possible: <reason>` with `<reason>` explaining why no validation applies (e.g. "comment-only edit"). The pure-doc carve-out exists because such fixes have no executable surface to validate; demoting them all to `partial` would be needless friction.
-- `partial`: the change addresses the issue but at least one validation command was *attempted* and exited non-zero, was skipped after starting, or only partially passed. Explain the gap in `Remaining risk`. This status applies whenever validation was attempted but did not fully succeed — `none possible:` entries do NOT count as "attempted".
+- `success`: the change addresses the issue and every `Validation:` entry is one of:
+  - `<command> — exit 0` (a real check that passed), or
+  - `none possible: <reason>` (no validation applies; `<reason>` must say why, e.g. "comment-only edit" or "no covering test exists"). A mix of the two is allowed — e.g. a doc edit that also passes `git diff --check` is `success`.
+- `partial`: the change addresses the issue but at least one validation command was *attempted* and exited non-zero, was skipped after starting, or only partially passed. Explain the gap in `Remaining risk`. `none possible:` entries do NOT count as "attempted".
 - `failed`: the change does not address the issue (e.g. could not be applied within owned files, attempted fix introduced a regression).
 
-Never report `Status: success` when any validation entry has a non-zero exit code. The resolver treats `partial` as "ask the user" and `failed` as "do not mark fixed".
+**Safety net — never report `Status: success` when:**
+- any `Validation:` entry has a non-zero exit code, OR
+- a validation command was attempted but exited with no recordable status (command not found, killed, environment-not-available). Use `partial` instead and describe the gap.
+
+The resolver treats `partial` as "ask the user" and `failed` as "do not mark fixed".
 
 The resolver, dev agent, or human is responsible for committing and pushing. Do not start another review pass before the code changes are committed or intentionally left uncommitted by the dev agent.

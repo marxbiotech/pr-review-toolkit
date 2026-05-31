@@ -62,13 +62,28 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
    esac
    ```
 
-3. In append mode, extract the cache `content_hash` for CAS and validate it locally before relying on it:
+3. In append mode, extract the cache `content_hash` for CAS and validate it locally before relying on it. The snippet pins shell flags so failure behavior is the same regardless of the outer shell state, checks file existence before invoking jq (avoids a confusing "Could not open file" stderr), and surfaces the rc from the recovery script so a recovery failure cannot be silently swallowed:
 
    ```bash
-   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash' ".pr-review-cache/pr-${PR_NUMBER}.json")
+   set -euo pipefail
+   CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+
+   if [ ! -f "$CACHE_FILE" ]; then
+     echo "Cache file missing: $CACHE_FILE — refreshing from GitHub..." >&2
+     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
+       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
+       exit 2
+     fi
+     exit 2  # abort this run; the caller can retry now that cache exists
+   fi
+
+   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
    if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
      echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
-     "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"
+     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
+       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
+       exit 2
+     fi
      exit 2
    fi
    ```
@@ -77,6 +92,8 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
 4. Run `codex-review-pass` and provide the PR number, current diff context, changed files, existing review content, and any user-requested scope. The pass must return a bundle whose `Agents completed:` line names exactly these six agents: `code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, `comment-analyzer`. Verify with:
 
    ```bash
+   set -euo pipefail
+
    EXPECTED_AGENTS=$(printf '%s\n' \
      code-reviewer code-simplifier silent-failure-hunter \
      type-design-analyzer pr-test-analyzer comment-analyzer | sort -u)
@@ -86,15 +103,33 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
      exit 2
    fi
 
-   # Parse the "Agents completed:" line: split on commas, trim whitespace, dedupe.
-   ACTUAL_AGENTS=$(printf '%s\n' "$BUNDLE" \
-     | awk -F': *' '/^- *Agents completed:/ {print $2; exit}' \
-     | tr ',' '\n' | awk '{$1=$1; print}' | sort -u)
+   # Parse "Agents completed:" with continuation-line support. The producer
+   # contract (codex-review-pass Output Contract) pins this to a single physical
+   # line, but we tolerate soft-wrapped continuation (lines starting with one or
+   # more spaces) so a renderer that wraps long lines cannot trigger a false
+   # "missing agents" abort. awk concatenates a wrapped continuation onto the
+   # header line before splitting on commas.
+   AGENTS_LINE=$(printf '%s\n' "$BUNDLE" | awk '
+     /^- *Agents completed:/ { collecting=1; sub(/^- *Agents completed: */, ""); buf=$0; next }
+     collecting && /^[[:space:]]+/ { sub(/^[[:space:]]+/, " "); buf = buf $0; next }
+     collecting { print buf; exit }
+     END { if (collecting) print buf }
+   ')
+
+   if [ -z "$AGENTS_LINE" ]; then
+     echo "error: codex-review-pass bundle does not contain an 'Agents completed:' line" >&2
+     exit 2
+   fi
+
+   ACTUAL_AGENTS=$(printf '%s\n' "$AGENTS_LINE" \
+     | tr ',' '\n' \
+     | awk '{$1=$1; if (length($0)) print}' \
+     | sort -u)
 
    MISSING=$(comm -23 <(printf '%s\n' "$EXPECTED_AGENTS") <(printf '%s\n' "$ACTUAL_AGENTS"))
    if [ -n "$MISSING" ]; then
      echo "error: codex-review-pass returned an incomplete bundle. Missing agents:" >&2
-     printf '  - %s\n' $MISSING >&2
+     while IFS= read -r a; do printf '  - %s\n' "$a" >&2; done <<< "$MISSING"
      echo "Do not bootstrap or append from a partial bundle. Surface the bundle's Follow-up notes and abort." >&2
      exit 2
    fi
@@ -164,10 +199,23 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
 
 12. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file:
+    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file. The snippet pins shell flags, checks file existence first (so a missing cache doesn't silently take the "sync-failed" branch as it did before R3-C2), and captures jq's rc:
 
       ```bash
-      STALE=$(jq -r '.stale_source_id // false' ".pr-review-cache/pr-${PR_NUMBER}.json")
+      set -euo pipefail
+      CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+
+      if [ ! -f "$CACHE_FILE" ]; then
+        echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
+        echo "Cannot disambiguate exit 1 cause. Investigate manually." >&2
+        exit 1
+      fi
+
+      if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
+        echo "jq failed reading $CACHE_FILE: $STALE" >&2
+        exit 1
+      fi
+
       if [ "$STALE" = "true" ]; then
         echo "Post-sync cache repair failed; the source_comment_id placeholder was not updated." >&2
         echo "Recover with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2

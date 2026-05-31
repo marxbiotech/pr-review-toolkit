@@ -205,9 +205,13 @@ graph LR
     H --> I[Merge PR]
 ```
 
-- `codex-review-pass` is read-only and returns a normalized review bundle.
-- `pr-review-and-document` is the only writer of the canonical PR comment / `.pr-review-cache/pr-#.json`.
-- `pr-review-resolver` owns user interaction and all status updates; it invokes `codex-fix-worker` (resolver-managed) to perform bounded code edits.
+The five skills map one-to-one to the five role boundaries:
+
+- **Producer** — `codex-review-pass` is read-only and returns a normalized review bundle.
+- **Publisher** — `pr-review-and-document` is the only writer of the canonical PR comment / `.pr-review-cache/pr-#.json`.
+- **Integrator** — `gemini-review-integrator` merges Gemini Code Assist inline comments into the canonical comment.
+- **Resolver** — `pr-review-resolver` owns user interaction and all status updates.
+- **Worker** — `codex-fix-worker` is resolver-managed and performs bounded code edits for one selected issue.
 
 ## PR Comment Structure
 
@@ -244,13 +248,13 @@ The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugi
 | `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist inline comments |
 | `review-metadata-upgrade.sh` | Normalize PR review metadata to schema 1.1 |
 | `review-metadata-replace.sh` | Replace the hidden metadata block without changing issue sections |
-| `deploy-pr.sh` | PR deploy helper used by the `deploy-pr` skill |
+| `deploy-pr.sh` | PR deploy helper invoked by the `/deploy-pr` slash command (not a skill) |
 
 Scripts fall into three call-site categories:
 
-- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
-- **Internal helpers** (used by the scripts above, never called directly by skills): `find-review-comment.sh`, `upsert-review-comment.sh`.
-- **Maintenance / out-of-band CLI** (run by humans or by skills outside the canonical review workflow): `cache-cleanup.sh` (stale cache pruning), `deploy-pr.sh` (used by the `deploy-pr` skill).
+- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `find-review-comment.sh` (currently called as a precheck by Claude `gemini-review-integrator/SKILL.md`; planned to be removed in favor of relying on `cache-read-comment.sh` exit 2), `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
+- **Internal helpers** (used by the scripts above, not called directly by skills): `upsert-review-comment.sh`.
+- **Maintenance / out-of-band CLI** (run by humans or by slash commands outside the canonical review workflow): `cache-cleanup.sh` (stale cache pruning), `deploy-pr.sh` (used by the `/deploy-pr` slash command, not a skill).
 
 ## License
 
