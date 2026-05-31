@@ -46,6 +46,9 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/check-fix-worker-scope.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -70,33 +73,22 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    esac
    ```
 
-3. Extract the cache `content_hash` for CAS and validate it locally before relying on it. The snippet pins shell flags, checks file existence before invoking jq, and surfaces the recovery script's rc:
+3. Extract the cache `content_hash` for CAS via the shared helper. The helper does file-existence check, jq read with rc capture, regex validation, and triggers `cache-sync.sh` on any failure (with rc propagation and post-recovery validation):
 
    ```bash
-   set -euo pipefail
-   CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+   set +e
+   EXPECTED_CONTENT_HASH=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh" "$PR_NUMBER")
+   rc=$?
+   set -e
 
-   if [ ! -f "$CACHE_FILE" ]; then
-     echo "Cache file missing: $CACHE_FILE — refreshing from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2
-   fi
-
-   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
-   if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-     echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2
-   fi
+   case $rc in
+     0) ;;
+     2) echo "Cache was refreshed; re-read REVIEW_CONTENT and retry from Step 2." >&2; exit 2 ;;
+     *) exit "$rc" ;;
+   esac
    ```
 
-   `cache-write-comment.sh:36-44` enforces the same regex at write-time, but checking at extract-time gives a clearer error and triggers the documented recovery (`cache-sync.sh` re-fetches the canonical comment from GitHub) rather than failing late inside the write pipeline.
+   Unit-tested in `tests/extract-content-hash-test.sh`.
 4. Parse unresolved items from the review content.
 5. For each unresolved issue, one at a time:
    - Present the issue in Traditional Chinese.
@@ -105,13 +97,15 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    - Explain available options in Traditional Chinese.
    - Ask the user to choose: Fix, Deferred, N/A, or Skip for now.
    - Wait for the user's decision before moving to the next issue.
-**Session setup (perform once, before any fix-worker dispatch in Step 6).** Initialize the session-scoped `OWNED_FILES` bash array that Step 9's scope check reads. Without this, Step 9 either errors under `set -u` ("OWNED_FILES[@]: parameter not set") or silently fail-opens under `set +u`:
-
-```bash
-declare -a OWNED_FILES=()
-```
-
 6. For user-approved fixes:
+   - **Session setup (once per resolver session, before the first fix-worker dispatch):** initialize the session-scoped `OWNED_FILES` bash array that Step 9's scope check reads. Without this, Step 9 either errors under `set -u` ("OWNED_FILES[@]: parameter not set") or silently fail-opens under `set +u`:
+
+     ```bash
+     declare -a OWNED_FILES=()
+     ```
+
+     If this resolver session is resumed in a fresh shell (model context reset, new bash subshell), the `OWNED_FILES` array state is lost. The only safe action then is to abort this session and restart from Step 1; do NOT re-declare `OWNED_FILES=()` and continue, as the empty array would not reflect prior fix-worker dispatches and Step 9 would treat every subsequent write as unexpected (or fail-open, depending on shell flags).
+
    - Identify owned files from the issue and source inspection.
    - Check for overlap with any in-progress fix worker. Do not run two workers with overlapping owned files concurrently.
    - Spawn or invoke bounded fix work using the managed-only `codex-fix-worker` contract. Provide PR number, source, issue title, file references, user decision, and owned files.
@@ -135,55 +129,25 @@ declare -a OWNED_FILES=()
    - `Status: success`: mark only that issue as `✅ Fixed` and include a concise fix/validation note.
    - `Status: partial`: report the validation gap in Traditional Chinese and ask the user whether to accept-as-fixed, retry, or defer.
    - `Status: failed`: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A. Do not mark `✅ Fixed`.
-9. Validate modified file scope. Default `git diff --name-only` misses untracked new files and renames; with default `core.quotePath=true` it also escapes non-ASCII paths (e.g. `"T\303\251dious file.txt"`), which would silently false-positive against the raw paths in `OWNED_FILES`. Use the portable sequence below so an out-of-scope worker write cannot pass silently and so non-ASCII paths and macOS BSD `awk` both work correctly:
+9. Validate modified file scope via the shared helper. The helper is byte-exact for paths containing spaces, literal newlines, non-ASCII bytes, and forces per-file enumeration of untracked-dir contents (`-uall`) so workers cannot hide files inside a pre-existing untracked dir:
 
    ```bash
    # Defensive guard: if OWNED_FILES wasn't maintained per Step 6, fail loudly
-   # with a clear message instead of producing a confusing "every file is
-   # unexpected" abort or (under set -u) an "unbound variable" crash.
+   # with a clear message. The "" placeholder under set -u keeps the array
+   # expansion safe even on bash 3.2 (macOS default).
    if [ "${#OWNED_FILES[@]:-0}" -eq 0 ]; then
      echo "BUG: OWNED_FILES is empty. Step 6 must accumulate owned files via OWNED_FILES+=(...)." >&2
-     echo "Aborting scope check to avoid false-positive 'every file is unexpected'." >&2
+     echo "If this resolver session was resumed in a fresh shell, the array state is lost;" >&2
+     echo "abort this session and restart from Step 1 rather than continuing with an empty array." >&2
      exit 2
    fi
 
-   # Tracked-but-modified paths. `-c core.quotePath=false` keeps non-ASCII paths
-   # in their raw UTF-8 form (matching OWNED_FILES); `-z` + `tr '\0' '\n'` is
-   # NUL-safe for spaces and quotes. We use --no-renames so renames appear as
-   # delete+add — that way both endpoints are visible and OWNED_FILES must list
-   # whichever side the worker is allowed to touch.
-   TRACKED=$(git -c core.quotePath=false diff -z --name-only --no-renames HEAD | tr '\0' '\n')
-
-   # Untracked paths via NUL-delimited porcelain v1: each record is `XY path\0`,
-   # so we use `tr '\0' '\n'` first to convert to lines, then awk's substr to
-   # strip the 3-char status prefix (`??` + space). The earlier `awk -v RS='\0'`
-   # form was broken on macOS/BSD awk (RS='\0' is interpreted as empty RS aka
-   # paragraph mode, collapsing the entire stream to one record), so only the
-   # first untracked file was emitted. Using `tr` first is portable.
-   UNTRACKED=$(git -c core.quotePath=false status -z --porcelain \
-                 | tr '\0' '\n' \
-                 | awk '/^\?\? / { print substr($0, 4) }')
-
-   ACTUAL=$(printf '%s\n%s\n' "$TRACKED" "$UNTRACKED" | sort -u | sed '/^$/d')
-
-   # OWNED_FILES is the array maintained in Step 6 across all worker dispatches.
-   # `${OWNED_FILES[@]:-}` survives `set -u` in case the guard above is ever
-   # removed; the `sed '/^$/d'` strips the empty entry that ${arr[@]:-} produces.
-   EXPECTED=$(printf '%s\n' "${OWNED_FILES[@]:-}" | sort -u | sed '/^$/d')
-
-   UNEXPECTED=$(comm -23 <(printf '%s\n' "$ACTUAL") <(printf '%s\n' "$EXPECTED"))
-   if [ -n "$UNEXPECTED" ]; then
-     echo "Unexpected files changed (not in any worker's owned set):" >&2
-     # Quote to preserve spaces in filenames in the diagnostic output.
-     while IFS= read -r f; do
-       printf '  %s\n' "$f" >&2
-     done <<< "$UNEXPECTED"
-     # Stop and ask the user before continuing.
-     exit 2
-   fi
+   "${PR_REVIEW_TOOLKIT_ROOT}/scripts/check-fix-worker-scope.sh" "${OWNED_FILES[@]}"
    ```
 
-   **Rename note:** the `--no-renames` flag makes a `git mv a.txt b.txt` appear as deletion of `a.txt` + addition of `b.txt`. If a worker is expected to perform a rename, its `OWNED_FILES` declaration must include both endpoints.
+   The helper is unit-tested in `tests/check-fix-worker-scope-test.sh` (12 cases pinning the R3-C1 BSD-awk regression, R4-C1 newline-in-filename, R4-C2 untracked-dir collapse, R3-C4 rename + non-ASCII handling, and the baseline pass/fail cases). See [`scripts/check-fix-worker-scope.sh`](../../../../../scripts/check-fix-worker-scope.sh).
+
+   **Rename note:** the helper passes `--no-renames` to git, so `git mv a.txt b.txt` appears as deletion of `a.txt` + addition of `b.txt`. If a worker is expected to perform a rename, its `OWNED_FILES` declaration must include both endpoints.
 
 10. Update the canonical review comment:
     - Preserve all existing Claude, Gemini, and Codex issue sections.
@@ -221,29 +185,14 @@ declare -a OWNED_FILES=()
 
 11. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag. Pin shell flags, check file existence first, and capture jq's rc so a missing or unreadable cache file cannot silently take the wrong branch:
+    - `1`: covers two distinct failure modes — disambiguate via the shared helper:
 
       ```bash
-      set -euo pipefail
-      CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
-
-      if [ ! -f "$CACHE_FILE" ]; then
-        echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
-        exit 1
-      fi
-
-      if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
-        echo "jq failed reading $CACHE_FILE: $STALE" >&2
-        exit 1
-      fi
-
-      if [ "$STALE" = "true" ]; then
-        echo "Post-sync cache repair failed; recover with ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
-      else
-        echo "GitHub sync failed but local cache is up to date." >&2
-        echo "Retry with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh --sync-from-cache \"$PR_NUMBER\"" >&2
-      fi
+      "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
+      # always exits 1
       ```
+
+      Unit-tested in `tests/disambiguate-stale-source-test.sh`.
 
     - `2`: local error; abort.
     - `3`: remote is newer; re-fetch with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it does a force-refresh internally), then redo Steps 2-10 against the fresh content.

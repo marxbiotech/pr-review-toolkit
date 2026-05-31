@@ -143,7 +143,9 @@ Codex review bundle:
 
 **Bundle format invariants (consumed by `pr-review-and-document`):**
 
-- The `- Agents completed:` line **MUST be a single physical line** with no soft-wrap, no continuation. Names are comma-separated; whitespace around commas is allowed. This is the contract the downstream completeness check parses; a wrapped continuation line silently drops the wrapped agents and triggers a false "missing agents" abort.
+- "Physical line" means a sequence of bytes terminated by a single LF (`\n`), with no embedded CR, no trailing CR, and no Unicode line-separator characters (U+2028, U+2029). CRLF producers should normalize to LF before emitting the bundle. The consumer applies `tr -d '\r'` defensively before parsing, but producers must not rely on this — newer or stricter consumers may not.
+- The `- Agents completed:` line SHOULD be emitted as a single physical line per the definition above. Names are comma-separated; whitespace around commas is allowed.
+- The consumer in `pr-review-and-document` tolerates indented continuation lines (lines starting with whitespace) as defense-in-depth, concatenating them with the header line before parsing. This is a Postel's-Law leniency: producers must aim for single-line, but a renderer that wraps long lines will not silently lose agents from the completeness check.
 - All other top-level fields (`- PR number:`, `- Head SHA:`, `- New findings:`, etc.) also occupy a single physical line for their header.
 - Nested entries under `- New findings:`, `- Strengths:`, `- Type ratings:`, `- Follow-up notes:` are indented continuation bullets and may wrap freely.
 

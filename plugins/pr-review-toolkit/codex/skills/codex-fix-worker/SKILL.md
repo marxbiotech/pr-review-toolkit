@@ -83,8 +83,8 @@ Files changed:
 - path/to/file.ts
 
 Validation:
-- <command> — exit <N>
-- <command> — exit <N>
+- <command> -- exit <N>
+- <command> -- exit <N>
 - (or) none possible: <reason>
 
 Status: success | partial | failed
@@ -102,17 +102,20 @@ Remaining risk:
 - ...
 ```
 
+`Validation:` entry shape — each entry is exactly one of:
+
+- `<command> -- exit <N>` — a real validation command and its captured exit code. The separator is the ASCII double-dash ` -- ` (space + two hyphens + space) to keep encoding-stable and easy to regex (`/^- (.*) -- exit (-?\d+)$/`); do not use Unicode em-dash. Commands containing the literal ` -- ` substring should be quoted (e.g. `'bash -c "..."` ` instead of bare).
+- `none possible: <reason>` — an explicit statement that no validation applies, with `<reason>` explaining why (e.g. "comment-only edit" or "no covering test exists in the repo").
+
 `Status` semantics — the resolver parses this line and uses it to decide whether to mark `✅ Fixed`:
 
-- `success`: the change addresses the issue and every `Validation:` entry is one of:
-  - `<command> — exit 0` (a real check that passed), or
-  - `none possible: <reason>` (no validation applies; `<reason>` must say why, e.g. "comment-only edit" or "no covering test exists"). A mix of the two is allowed — e.g. a doc edit that also passes `git diff --check` is `success`.
-- `partial`: the change addresses the issue but at least one validation command was *attempted* and exited non-zero, was skipped after starting, or only partially passed. Explain the gap in `Remaining risk`. `none possible:` entries do NOT count as "attempted".
+- `success`: the change addresses the issue and every `Validation:` entry is either `-- exit 0` or `none possible: <reason>`. A mix is allowed — e.g. a doc edit that also passes `git diff --check` reports both forms and is `success`.
+- `partial`: the change addresses the issue but at least one validation entry has exit code != 0, was skipped/aborted partway, failed to start (command not found, environment unavailable), or completed with only partial coverage. Explain the gap in `Remaining risk`. `none possible: <reason>` entries do NOT count as "attempted".
 - `failed`: the change does not address the issue (e.g. could not be applied within owned files, attempted fix introduced a regression).
 
 **Safety net — never report `Status: success` when:**
 - any `Validation:` entry has a non-zero exit code, OR
-- a validation command was attempted but exited with no recordable status (command not found, killed, environment-not-available). Use `partial` instead and describe the gap.
+- a validation command was attempted but its true exit code could not be captured (worker forgot `set -o pipefail` and only saw the rc of a pipeline tail, the command was backgrounded without `wait`, a wrapper script swallowed the inner rc). Use `partial` and explain the rc-capture gap in `Remaining risk`.
 
 The resolver treats `partial` as "ask the user" and `failed` as "do not mark fixed".
 

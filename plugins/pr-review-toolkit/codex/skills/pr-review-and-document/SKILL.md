@@ -38,6 +38,9 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/get-pr-number.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -62,33 +65,23 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
    esac
    ```
 
-3. In append mode, extract the cache `content_hash` for CAS and validate it locally before relying on it. The snippet pins shell flags so failure behavior is the same regardless of the outer shell state, checks file existence before invoking jq (avoids a confusing "Could not open file" stderr), and surfaces the rc from the recovery script so a recovery failure cannot be silently swallowed:
+3. In append mode, extract the cache `content_hash` for CAS via the shared helper. The helper does file-existence check, jq read with rc capture, regex validation, and triggers `cache-sync.sh` on any failure (with rc propagation and post-recovery validation to prevent infinite retry loops):
 
    ```bash
    set -euo pipefail
-   CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+   set +e
+   EXPECTED_CONTENT_HASH=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh" "$PR_NUMBER")
+   rc=$?
+   set -e
 
-   if [ ! -f "$CACHE_FILE" ]; then
-     echo "Cache file missing: $CACHE_FILE — refreshing from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2  # abort this run; the caller can retry now that cache exists
-   fi
-
-   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
-   if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-     echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2
-   fi
+   case $rc in
+     0) ;;
+     2) echo "Cache was refreshed; re-read EXISTING_CONTENT and retry from Step 2." >&2; exit 2 ;;
+     *) exit "$rc" ;;
+   esac
    ```
 
-   `cache-write-comment.sh:36-44` does enforce the same regex at write-time, but checking at extract-time gives a clearer error and triggers the documented recovery (`cache-sync.sh` refreshes the cache from GitHub) rather than failing late inside the write pipeline.
+   The helper centralizes the contract documented in `cache-write-comment.sh:36-44` and is unit-tested in `tests/extract-content-hash-test.sh` (6 cases including missing file, missing field, malformed hash, and recovery failure paths). See [`scripts/extract-content-hash.sh`](../../../../../scripts/extract-content-hash.sh) for the implementation.
 4. Run `codex-review-pass` and provide the PR number, current diff context, changed files, existing review content, and any user-requested scope. The pass must return a bundle whose `Agents completed:` line names exactly these six agents: `code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, `comment-analyzer`. Verify with:
 
    ```bash
@@ -103,17 +96,24 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
      exit 2
    fi
 
+   # Defensively strip CR so a CRLF-emitting producer doesn't leave a stray
+   # \r on the last agent name, which would cause comm against the LF-only
+   # EXPECTED set to mark "comment-analyzer\r" as missing.
    # Parse "Agents completed:" with continuation-line support. The producer
    # contract (codex-review-pass Output Contract) pins this to a single physical
    # line, but we tolerate soft-wrapped continuation (lines starting with one or
    # more spaces) so a renderer that wraps long lines cannot trigger a false
-   # "missing agents" abort. awk concatenates a wrapped continuation onto the
-   # header line before splitting on commas.
-   AGENTS_LINE=$(printf '%s\n' "$BUNDLE" | awk '
+   # "missing agents" abort. The `printed` sentinel + END guard avoids
+   # double-emitting `buf` when a non-continuation line follows (awk's `exit`
+   # always runs END, so a naive `print buf; exit` plus `END { print buf }`
+   # would emit twice — benign here because of the downstream `sort -u`, but
+   # the duplication corrupts AGENTS_LINE for any debug logging or any future
+   # check that uses per-line count).
+   AGENTS_LINE=$(printf '%s\n' "$BUNDLE" | tr -d '\r' | awk '
      /^- *Agents completed:/ { collecting=1; sub(/^- *Agents completed: */, ""); buf=$0; next }
      collecting && /^[[:space:]]+/ { sub(/^[[:space:]]+/, " "); buf = buf $0; next }
-     collecting { print buf; exit }
-     END { if (collecting) print buf }
+     collecting { print buf; printed=1; exit }
+     END { if (collecting && !printed) print buf }
    ')
 
    if [ -z "$AGENTS_LINE" ]; then
@@ -199,32 +199,14 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
 
 12. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag in the cache file. The snippet pins shell flags, checks file existence first (so a missing cache doesn't silently take the "sync-failed" branch as it did before R3-C2), and captures jq's rc:
+    - `1`: covers two distinct failure modes — disambiguate via the shared helper. The helper does file-existence + jq-rc + stale-flag inspection and prints the right recovery command to stderr:
 
       ```bash
-      set -euo pipefail
-      CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
-
-      if [ ! -f "$CACHE_FILE" ]; then
-        echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
-        echo "Cannot disambiguate exit 1 cause. Investigate manually." >&2
-        exit 1
-      fi
-
-      if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
-        echo "jq failed reading $CACHE_FILE: $STALE" >&2
-        exit 1
-      fi
-
-      if [ "$STALE" = "true" ]; then
-        echo "Post-sync cache repair failed; the source_comment_id placeholder was not updated." >&2
-        echo "Recover with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
-        echo "(This re-fetches the canonical comment from GitHub and repopulates the cache envelope.)" >&2
-      else
-        echo "GitHub sync failed but local cache is up to date." >&2
-        echo "Retry the GitHub push with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh --sync-from-cache \"$PR_NUMBER\"" >&2
-      fi
+      "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
+      # always exits 1
       ```
+
+      Unit-tested in `tests/disambiguate-stale-source-test.sh` (5 cases: stale=true, stale=false, field missing, cache absent, invalid JSON).
 
     - `2`: local error; abort.
     - `3`: remote is newer. Re-fetch the canonical comment with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it already does a force-refresh internally), then redo Steps 2-11 against the fresh content.

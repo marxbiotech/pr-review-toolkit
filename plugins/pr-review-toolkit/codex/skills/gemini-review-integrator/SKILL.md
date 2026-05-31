@@ -45,6 +45,8 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-read-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -70,33 +72,22 @@ Before running the workflow, verify these helper scripts are executable and `scr
    ```
 
    `cache-read-comment.sh` exits `2` if no canonical comment exists — there is no need for a separate `find-review-comment.sh` precheck (it would return empty stdout with rc=0 and silently look like success).
-3. Extract the cache `content_hash` for CAS and validate it locally before relying on it. The snippet pins shell flags, checks file existence before invoking jq, and surfaces the recovery script's rc:
+3. Extract the cache `content_hash` for CAS via the shared helper. The helper does file-existence check, jq read with rc capture, regex validation, and triggers `cache-sync.sh` on any failure (with rc propagation and post-recovery validation):
 
    ```bash
-   set -euo pipefail
-   CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
+   set +e
+   EXPECTED_CONTENT_HASH=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh" "$PR_NUMBER")
+   rc=$?
+   set -e
 
-   if [ ! -f "$CACHE_FILE" ]; then
-     echo "Cache file missing: $CACHE_FILE — refreshing from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2
-   fi
-
-   EXPECTED_CONTENT_HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE")
-   if ! [[ "$EXPECTED_CONTENT_HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-     echo "Cache content_hash is missing or malformed: '$EXPECTED_CONTENT_HASH'. Refreshing cache from GitHub..." >&2
-     if ! "${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh" "$PR_NUMBER"; then
-       echo "Cache recovery failed (cache-sync.sh rc=$?). Manual intervention required." >&2
-       exit 2
-     fi
-     exit 2
-   fi
+   case $rc in
+     0) ;;
+     2) echo "Cache was refreshed; re-read EXISTING_CONTENT and retry from Step 2." >&2; exit 2 ;;
+     *) exit "$rc" ;;
+   esac
    ```
 
-   `cache-write-comment.sh:36-44` enforces the same regex at write-time, but checking at extract-time gives a clearer error and triggers the documented recovery (`cache-sync.sh` re-fetches the canonical comment from GitHub) rather than failing late inside the write pipeline.
+   Unit-tested in `tests/extract-content-hash-test.sh`.
 4. Fetch Gemini comments with explicit error handling. The script can fail for several reasons (gh auth expired, GitHub 5xx, network timeout, malformed PR) — collapsing those into "no Gemini comments" silently masks integration failures:
 
    ```bash
@@ -198,29 +189,14 @@ Before running the workflow, verify these helper scripts are executable and `scr
 
 14. Handle `cache-write-comment.sh` exit codes (see `cache-write-comment.sh:22-25`):
     - `0`: success.
-    - `1`: covers two distinct failure modes — disambiguate by inspecting the `stale_source_id` flag. Pin shell flags, check file existence first, and capture jq's rc so a missing or unreadable cache file cannot silently take the wrong branch:
+    - `1`: covers two distinct failure modes — disambiguate via the shared helper:
 
       ```bash
-      set -euo pipefail
-      CACHE_FILE=".pr-review-cache/pr-${PR_NUMBER}.json"
-
-      if [ ! -f "$CACHE_FILE" ]; then
-        echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
-        exit 1
-      fi
-
-      if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
-        echo "jq failed reading $CACHE_FILE: $STALE" >&2
-        exit 1
-      fi
-
-      if [ "$STALE" = "true" ]; then
-        echo "Post-sync cache repair failed; recover with ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh \"$PR_NUMBER\"" >&2
-      else
-        echo "GitHub sync failed but local cache is up to date." >&2
-        echo "Retry with: ${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-write-comment.sh --sync-from-cache \"$PR_NUMBER\"" >&2
-      fi
+      "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
+      # always exits 1
       ```
+
+      Unit-tested in `tests/disambiguate-stale-source-test.sh`.
 
     - `2`: local error; abort.
     - `3`: remote is newer; re-fetch with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it does a force-refresh internally), then redo Steps 2-13 against the fresh content.
