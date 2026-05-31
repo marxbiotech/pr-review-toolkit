@@ -18,10 +18,11 @@ pr-review-and-document
 ```text
 codex-review-pass
 pr-review-and-document
+pr-review-resolver
 codex-fix-worker
 ```
 
-兩個 Codex skills 必須使用現有 cache/comment contract，不建立額外狀態檔，避免 workflow 分裂。
+Codex skills 必須使用現有 cache/comment contract，不建立額外狀態檔，避免 workflow 分裂。
 
 ## Single Source of Truth
 
@@ -394,6 +395,34 @@ Remaining risk:
 
 dev agent 或人類負責 commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
 
+## Codex pr-review-resolver
+
+Codex `pr-review-resolver` 是互動式決策協調器，不是 `codex-fix-worker` 的別名。它對應 Claude `pr-review-resolver` 的行為：讀取 canonical review comment，逐一呈現未解決 issue，用繁體中文和使用者討論處理方式，等待使用者決定後才執行。
+
+責任：
+
+1. 使用 `get-pr-number.sh` 與 `cache-read-comment.sh` 讀取當前 PR 的 canonical review comment。
+2. 解析未解決項目：
+   - `⚠️` / `🔴`
+   - `[Codex]` / `[Gemini]` issue
+   - 無來源 prefix 的 Claude issue
+   - unchecked Action Plan items
+3. 每次只處理一個 issue，以繁中說明問題、影響、檔案位置與選項。
+4. 等待使用者決定：Fix / Deferred / N/A / Skip。
+5. 若使用者選擇 Fix，確認 owned files 後才派發 bounded fix work；可使用 `codex-fix-worker` contract 修單一 issue。
+6. 若使用者選擇 Deferred 或 N/A，記錄自包含的 Design Decision 註解，避免依賴 PR link。
+7. 統一更新 canonical review comment 狀態、summary counts、metadata `last_writer: pr-review-resolver`，並保持 `review_round` 不變。
+8. 一律透過 `cache-write-comment.sh --stdin --expected-content-hash` 寫回，不直接使用 `gh api`。
+
+和 `codex-fix-worker` 的差異：
+
+| Skill | 職責 | 是否和使用者逐一討論 | 是否修 code | 是否更新整體 resolver 狀態 |
+|---|---|---:|---:|---:|
+| `pr-review-resolver` | 互動式 issue 決策與狀態協調 | 是 | 可協調 worker | 是 |
+| `codex-fix-worker` | 修一個已決策 issue | 否 | 是 | 只更新該 issue |
+
+`pr-review-resolver` 不應跳過使用者決策，也不應自行將 issue 標記 Deferred / N/A。若多個修復會修改同一檔案，resolver 必須序列化或等待前一個 worker 完成，避免並行修改衝突。
+
 ## Cross-Tool Workflow
 
 Claude-first workflow：
@@ -402,9 +431,10 @@ Claude-first workflow：
 Claude:    pr-review-and-document
 Claude:    gemini-review-integrator
 Codex:     pr-review-and-document
-Codex:     codex-fix-worker for selected issues
+Codex:     pr-review-resolver
+Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
-Claude:    pr-review-resolver when human decision is needed
+Claude:    pr-review-resolver when Claude-side human decision flow is preferred
 ```
 
 Codex-first workflow：
@@ -412,18 +442,20 @@ Codex-first workflow：
 ```text
 Codex:     pr-review-and-document
 Claude:    gemini-review-integrator
-Codex:     codex-fix-worker for selected issues
+Codex:     pr-review-resolver
+Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
-Claude:    pr-review-resolver when human decision is needed
+Claude:    pr-review-resolver when Claude-side human decision flow is preferred
 ```
 
 Loop：
 
 ```text
 Claude or Codex: review pass
+Codex or Claude: resolver decides selected issues
 Codex or Claude: fix selected issues
 dev agent:       commit changes
-Claude:          resolver for ambiguous decisions
+Claude/Codex:    resolver for ambiguous decisions
 repeat until Summary shows no remaining blocking issues
 ```
 
@@ -460,6 +492,10 @@ plugins/pr-review-toolkit/
 │       │   │       └── comment-analyzer.md
 │       │   └── SKILL.md
 │       ├── pr-review-and-document/
+│       │   └── SKILL.md
+│       ├── pr-review-resolver/
+│       │   ├── references/
+│       │   │   └── interaction-example.md
 │       │   └── SKILL.md
 │       └── codex-fix-worker/
 │           └── SKILL.md
@@ -504,6 +540,7 @@ Phase 2 must ship Claude compatibility updates and Codex skill scaffolding toget
 - Update `pr-review-resolver` to recognize `[Codex]` issues and untagged Claude issues
 - Add `codex/skills/codex-review-pass/SKILL.md`
 - Add `codex/skills/pr-review-and-document/SKILL.md`
+- Add `codex/skills/pr-review-resolver/SKILL.md`
 - Add `codex/skills/codex-fix-worker/SKILL.md`
 - Ensure Codex write-capable skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state
 
