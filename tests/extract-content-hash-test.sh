@@ -56,8 +56,18 @@ write_malformed_hash_cache() {
 }
 write_cache_sync_stub() {
   # $1: behavior — one of: write-valid, write-malformed, fail
+  #
+  # IMPORTANT: this heredoc is UNQUOTED (`<<EOF`, not `<<'EOF'`), so
+  # variables — including ${1} — are expanded at heredoc-write time
+  # using THIS function's $1, NOT at stub-execution time using the
+  # generated stub's $1. That's intentional: each test case calls
+  # this function with the desired behavior, and the generated stub
+  # is a flat single-behavior script (the case-statement is dead
+  # except for the matching branch). Readers debugging the stub
+  # should NOT assume it dispatches on its runtime argument.
   cat > stub-scripts/cache-sync.sh <<EOF
 #!/bin/bash
+# Generated stub — single-behavior, dispatch was at heredoc-write time.
 case "${1}" in
   write-valid)
     mkdir -p .pr-review-cache
@@ -79,12 +89,15 @@ EOF
 }
 
 run_script() {
-  rm -f /tmp/extract-content-hash-test.stderr
+  # Per-invocation mktemp stderr capture so concurrent test runs cannot race.
+  local stderr_file
+  stderr_file=$(mktemp)
   set +e
-  STDOUT=$(stub-scripts/extract-content-hash.sh "$PR" 2>/tmp/extract-content-hash-test.stderr)
+  STDOUT=$(stub-scripts/extract-content-hash.sh "$PR" 2>"$stderr_file")
   RC=$?
-  STDERR=$(cat /tmp/extract-content-hash-test.stderr)
+  STDERR=$(cat "$stderr_file")
   set -e
+  rm -f "$stderr_file"
 }
 
 assert_rc() {
@@ -171,5 +184,27 @@ write_cache_sync_stub fail
 run_script
 assert_rc "case6 recovery-fails" 5
 assert_stderr_contains "case6 recovery-fails" "cache-sync.sh rc=5"
+
+# Case 7: missing $1 (empty PR_NUMBER) -> exit 2 with usage error
+#
+# Pins that the helper rejects an empty PR number explicitly rather
+# than silently falling through (where it would attempt to read
+# `.pr-review-cache/pr-.json` and produce confusing diagnostics).
+empty_stderr=$(mktemp)
+set +e
+STDOUT=$(stub-scripts/extract-content-hash.sh "" 2>"$empty_stderr")
+RC=$?
+STDERR=$(cat "$empty_stderr")
+set -e
+rm -f "$empty_stderr"
+if [ "$RC" != 2 ]; then
+  echo "FAIL [case7 empty-arg]: expected exit 2, got $RC" >&2
+  exit 1
+fi
+if [[ "$STDERR" != *"PR number required"* ]]; then
+  echo "FAIL [case7 empty-arg]: stderr missing 'PR number required'" >&2
+  echo "  actual: $STDERR" >&2
+  exit 1
+fi
 
 echo "extract-content-hash tests passed"

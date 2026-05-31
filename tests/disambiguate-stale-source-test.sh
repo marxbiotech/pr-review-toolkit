@@ -1,8 +1,10 @@
 #!/bin/bash
 # Tests for scripts/disambiguate-stale-source.sh
 #
-# Coverage (R2-I5 / R3-C2 / R4 family — silent misdiagnosis of
-# cache-write-comment.sh exit 1):
+# Coverage (silent-misdiagnosis bug family for cache-write-comment.sh
+# exit code 1, which covers two distinct failure modes — GitHub sync
+# failed vs post-sync cache repair failed — that earlier prose forms
+# routed to the wrong recovery command):
 #   1. Cache present, stale_source_id=true  -> "Post-sync cache repair failed"
 #   2. Cache present, stale_source_id=false -> "GitHub sync failed but cache OK"
 #   3. Cache present, field missing         -> defaults to false branch
@@ -11,6 +13,8 @@
 #
 # The script always exits 1 (it's invoked from the exit-1 branch of
 # callers); the test checks rc=1 and the stderr message for each case.
+# Cases 4 and 5 are load-bearing: earlier forms using `2>/dev/null` on
+# the jq call routed both into the "GitHub sync failed" branch silently.
 
 set -euo pipefail
 
@@ -39,12 +43,15 @@ write_cache() {
 }
 
 run_script() {
-  rm -f /tmp/disambiguate-stale-source-test.stderr
+  # Per-invocation mktemp stderr capture so concurrent test runs cannot race.
+  local stderr_file
+  stderr_file=$(mktemp)
   set +e
-  STDOUT=$("$SCRIPT" "$PR" 2>/tmp/disambiguate-stale-source-test.stderr)
+  STDOUT=$("$SCRIPT" "$PR" 2>"$stderr_file")
   RC=$?
-  STDERR=$(cat /tmp/disambiguate-stale-source-test.stderr)
+  STDERR=$(cat "$stderr_file")
   set -e
+  rm -f "$stderr_file"
 }
 
 assert_rc() {
@@ -98,41 +105,70 @@ assert_stderr_not_contains "case2 stale=false" "Post-sync cache repair failed"
 
 # Case 3: stale_source_id field missing -> defaults to false branch
 #
-# Pre-R4 prose form: `STALE=$(jq ... 2>/dev/null)` would emit empty $STALE on
-# missing field, and the `[ "$STALE" = "true" ]` test would correctly take
-# the false branch. R3-C2 added file-existence + capture-rc; the
-# `// false` default in the jq filter still emits "false" for a missing
-# field. This case pins that behavior.
+# This case pins the `// false` jq default. When `stale_source_id` is
+# absent (older cache envelopes that never had the flag set), the script
+# must take the "GitHub sync failed" branch (the more common cause when
+# the flag is unset). Without this default, a missing field would route
+# to the wrong recovery command.
 rm -rf .pr-review-cache
 write_cache '{"content_hash":"sha256:abc"}'
 run_script
 assert_rc "case3 field-missing" 1
 assert_stderr_contains "case3 field-missing" "GitHub sync failed but local cache is up to date"
 
-# Case 4: cache file absent -> clear diagnostic
+# Case 4: cache file absent -> exit 10 (cannot-disambiguate)
 #
-# Before R3-C2, this case silently took the "GitHub sync failed" branch
-# (jq -r '...' /missing.json 2>/dev/null emits empty $STALE; the test
-# `[ "$STALE" = "true" ]` is false → "sync failed" branch fires →
-# recommends `--sync-from-cache` which then fails because no cache).
+# Earlier prose forms (before the file-existence precheck was added)
+# silently took the "GitHub sync failed" branch: `jq -r '...'
+# /missing.json 2>/dev/null` emits empty $STALE; the test `[ "$STALE" =
+# "true" ]` is false → "sync failed" branch fires → recommends
+# `--sync-from-cache` which then fails because no cache exists. This
+# case pins that the missing-file case is now caught explicitly with a
+# clear diagnostic AND a distinct exit code (10 = cannot-disambiguate)
+# so downstream tooling can branch on "nominal advice ready" (1) vs
+# "investigation required" (10).
 rm -rf .pr-review-cache
 run_script
-assert_rc "case4 cache-absent" 1
+assert_rc "case4 cache-absent" 10
 assert_stderr_contains "case4 cache-absent" "Cache file vanished"
 assert_stderr_not_contains "case4 cache-absent" "GitHub sync failed but local cache is up to date"
 assert_stderr_not_contains "case4 cache-absent" "Post-sync cache repair failed"
 
-# Case 5: cache file is invalid JSON -> jq fails, clear diagnostic
+# Case 5: cache file is invalid JSON -> exit 10 (cannot-disambiguate)
 #
-# Before R3-C2, jq's stderr was swallowed via 2>/dev/null and $STALE was
-# empty, so the "sync failed" branch fired silently. The R3-C2 fix
-# captures jq's rc; this case pins that the failure is visible.
+# Earlier prose forms swallowed jq's stderr via 2>/dev/null and left
+# $STALE empty, so the "sync failed" branch fired silently. The current
+# script captures jq's rc explicitly AND exits 10 (not 1) so downstream
+# tooling can distinguish "nominal advice ready" from "investigation
+# required because the cache itself is broken".
 rm -rf .pr-review-cache
 write_cache 'not valid json {'
 run_script
-assert_rc "case5 invalid-json" 1
+assert_rc "case5 invalid-json" 10
 assert_stderr_contains "case5 invalid-json" "jq failed reading"
 assert_stderr_not_contains "case5 invalid-json" "GitHub sync failed but local cache is up to date"
 assert_stderr_not_contains "case5 invalid-json" "Post-sync cache repair failed"
+
+# Case 6: missing $1 (empty PR_NUMBER) -> exit 1 with usage error
+#
+# Pins that the helper rejects an empty PR number explicitly. Empty $1
+# exits 1 (not 10) because the caller's exit-1 propagation contract
+# means even a usage error should keep the explicit-1 flow.
+empty_stderr=$(mktemp)
+set +e
+STDOUT=$("$SCRIPT" "" 2>"$empty_stderr")
+RC=$?
+STDERR=$(cat "$empty_stderr")
+set -e
+rm -f "$empty_stderr"
+if [ "$RC" != 1 ]; then
+  echo "FAIL [case6 empty-arg]: expected exit 1, got $RC" >&2
+  exit 1
+fi
+if [[ "$STDERR" != *"PR number required"* ]]; then
+  echo "FAIL [case6 empty-arg]: stderr missing 'PR number required'" >&2
+  echo "  actual: $STDERR" >&2
+  exit 1
+fi
 
 echo "disambiguate-stale-source tests passed"

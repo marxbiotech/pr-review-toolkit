@@ -73,10 +73,19 @@ if [ ! -f "$CACHE_FILE" ]; then
   attempt_recovery "file missing: ${CACHE_FILE}"
 fi
 
-# Capture jq's stderr into the variable on failure so the recovery diagnostic
-# can show the actual jq error instead of swallowing it via 2>/dev/null.
-if ! HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE" 2>&1); then
-  attempt_recovery "jq failed reading ${CACHE_FILE}: ${HASH}"
+# Capture jq's stderr SEPARATELY so a future jq build that emits warnings to
+# stderr on success (e.g. deprecation notes) doesn't contaminate $HASH with
+# warning text. The earlier `2>&1` form would have routed any stderr-on-
+# success into $HASH, breaking the sha256 regex below and triggering an
+# unnecessary recovery — the same silent-misdiagnosis bug class that R3-C2
+# fixed at a different site.
+JQ_ERR=$(mktemp)
+trap 'rm -f "$JQ_ERR"' EXIT
+
+jq_rc=0
+HASH=$(jq -r '.content_hash // ""' "$CACHE_FILE" 2>"$JQ_ERR") || jq_rc=$?
+if [ "$jq_rc" -ne 0 ]; then
+  attempt_recovery "jq failed reading ${CACHE_FILE}: $(cat "$JQ_ERR")"
 fi
 
 if ! [[ "$HASH" =~ ^sha256:[0-9a-f]{64}$ ]]; then

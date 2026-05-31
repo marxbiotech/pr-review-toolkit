@@ -22,7 +22,9 @@
 #   - filenames with spaces                 — NUL-delimited reads
 #   - filenames with literal newline bytes  — read -d '' preserves bytes
 #                                             byte-for-byte; linear compare
-#                                             is byte-exact (R4-C1)
+#                                             is byte-exact. Earlier
+#                                             `tr '\0' '\n'`-based form
+#                                             silently truncated such names.
 #   - non-ASCII filenames                   — core.quotePath=false keeps
 #                                             paths in raw UTF-8 (matching
 #                                             raw arg strings)
@@ -33,7 +35,17 @@
 #   - files inside untracked directories    — -uall on git status forces
 #                                             per-file enumeration so files
 #                                             cannot hide behind a "dir/"
-#                                             collapsed entry (R4-C2)
+#                                             collapsed entry. Without -uall,
+#                                             a worker could drop arbitrary
+#                                             files inside a pre-existing
+#                                             untracked dir and bypass scope.
+#   - .gitignored writes by fix-workers      — --ignored=traditional surfaces
+#                                             ignored files in the porcelain
+#                                             output as `!! path`. Without
+#                                             this, a worker could write
+#                                             *.log, node_modules/, .env,
+#                                             secrets/ etc. and bypass scope
+#                                             entirely.
 #
 # Exit codes:
 #   0 = scope OK (every changed file is in the owned set)
@@ -42,9 +54,11 @@
 
 set -euo pipefail
 
-# Save the expected set as a regular indexed array. Iteration uses
-# `"${EXPECTED[@]+...}"` form so an empty array doesn't trip `set -u`
-# on bash 3.2 (which treats `${arr[@]}` on empty arrays as unbound).
+# Save the expected set as a regular indexed array. Iteration is
+# guarded by an explicit length check in `is_expected()` below
+# (`[ "${#EXPECTED[@]}" -eq 0 ] && return 1`) rather than relying on
+# `"${EXPECTED[@]+...}"` expansion — the explicit form makes the
+# empty-case behavior immediately obvious at the function entry point.
 EXPECTED=("$@")
 
 # Track unexpected paths in an indexed array (also bash 3.2 safe).
@@ -77,12 +91,36 @@ is_expected() {
 # plus addition of `b`, so callers must include both endpoints in
 # OWNED_FILES — otherwise the legitimate rename aborts as unexpected,
 # but at least no silent escape is possible.
+#
+# We capture git output to a temp file first so git's rc is checked
+# explicitly. Process substitution (`< <(git ...)`) runs git in a
+# subshell whose rc is NOT seen by the outer `set -euo pipefail` — a
+# git failure (not-a-git-repo, corrupt .git, index.lock, etc.) would
+# otherwise be silently swallowed and the script would exit 0 with
+# zero output, telling the resolver "scope OK" when git never ran.
+# Pinned by test case 14.
+TRACKED_TMP=$(mktemp)
+UNTRACKED_TMP=$(mktemp)
+trap 'rm -f "$TRACKED_TMP" "$UNTRACKED_TMP"' EXIT
+
+# Note: do NOT use `if ! cmd; then rc=$?; fi` — $? after `! cmd` holds the
+# NEGATED rc (0 if cmd failed, 1 if it succeeded), not the underlying cmd rc.
+# Use the `cmd || rc=$?` form so the real rc is captured. Same lesson as
+# extract-content-hash.sh:41-43.
+git_rc=0
+git -c core.quotePath=false diff -z --name-only --no-renames HEAD > "$TRACKED_TMP" 2>&1 || git_rc=$?
+if [ "$git_rc" -ne 0 ]; then
+  echo "check-fix-worker-scope: git diff failed (rc=$git_rc); cannot validate scope" >&2
+  cat "$TRACKED_TMP" >&2
+  exit "$git_rc"
+fi
+
 while IFS= read -r -d '' path; do
   [ -z "$path" ] && continue
   if ! is_expected "$path"; then
     UNEXPECTED+=("$path")
   fi
-done < <(git -c core.quotePath=false diff -z --name-only --no-renames HEAD)
+done < "$TRACKED_TMP"
 
 # Untracked entries via `git status -z --porcelain -uall`. Each record is
 # the 2-char status code, a space, and the path, all NUL-terminated. The
@@ -90,24 +128,41 @@ done < <(git -c core.quotePath=false diff -z --name-only --no-renames HEAD)
 # enumeration: without it, files inside a pre-existing untracked directory
 # collapse to a single `dir/` entry and a worker could hide arbitrary new
 # files inside such a directory and bypass the scope check.
+# Same rc-capture pattern for git status as for git diff above.
+# --ignored=traditional surfaces gitignored files as `!! path` records
+# so a fix-worker cannot escape scope by writing files that match
+# common gitignore patterns (*.log, node_modules/*, .env, secrets/, ...).
+git_rc=0
+git -c core.quotePath=false status -z --porcelain -uall --ignored=traditional > "$UNTRACKED_TMP" 2>&1 || git_rc=$?
+if [ "$git_rc" -ne 0 ]; then
+  echo "check-fix-worker-scope: git status failed (rc=$git_rc); cannot validate scope" >&2
+  cat "$UNTRACKED_TMP" >&2
+  exit "$git_rc"
+fi
+
 while IFS= read -r -d '' record; do
   [ -z "$record" ] && continue
-  # Only `?? ` records are untracked additions; the other porcelain v1
-  # status codes (M, A, D, R, C, U) for tracked files are already
-  # surfaced by the git diff loop above.
+  # Untracked additions are `?? path`, gitignored writes are `!! path`.
+  # The other porcelain v1 status codes (M, A, D, R, C, U) for tracked
+  # files are already surfaced by the git diff loop above.
+  #
+  # The 3-char prefix is exactly XY + 1 space. `${record#???}` would
+  # also work but the explicit case + #?? form documents the format.
+  # DO NOT add a further `${path# }` strip — that would silently
+  # corrupt filenames that legitimately start with a space (e.g.
+  # ` leading.txt` would become `leading.txt` and a worker could
+  # bypass scope check by declaring the no-leading-space form as
+  # owned). Pinned by test case 13.
   case "$record" in
     '?? '*) path="${record#?? }" ;;
+    '!! '*) path="${record#!! }" ;;
     *) continue ;;
   esac
-  # Strip the leading space remaining after "??" so paths like " path"
-  # don't have a phantom leading space (the status format is `XY path`
-  # so the space is part of the 3-char prefix).
-  path="${path# }"
   [ -z "$path" ] && continue
   if ! is_expected "$path"; then
     UNEXPECTED+=("$path")
   fi
-done < <(git -c core.quotePath=false status -z --porcelain -uall)
+done < "$UNTRACKED_TMP"
 
 if [ "${#UNEXPECTED[@]}" -gt 0 ]; then
   echo "Unexpected files changed (not in any worker's owned set):" >&2

@@ -49,6 +49,7 @@ Use only these scripts for review state:
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/extract-content-hash.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/check-fix-worker-scope.sh"
+"${PR_REVIEW_TOOLKIT_ROOT}/scripts/parse-validation-entry.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-upgrade.sh"
 "${PR_REVIEW_TOOLKIT_ROOT}/scripts/review-metadata-replace.sh"
 ```
@@ -126,17 +127,24 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
      ```
    - Mark the item as `⏭️ Deferred` or `⏭️ N/A` in the planned comment update.
 8. After all issues have decisions, collect fix worker results. Parse the worker's `Status:` line (see `codex-fix-worker` Output Contract); do not infer success from the presence of `Files changed:` alone:
-   - `Status: success`: mark only that issue as `✅ Fixed` and include a concise fix/validation note.
+   - `Status: success`: cross-check every `Validation:` entry by passing it to `${PR_REVIEW_TOOLKIT_ROOT}/scripts/parse-validation-entry.sh '<entry>'`. The parser exits `0` for both valid shapes (`<cmd> -- exit <N>` and `none possible: <reason>`) and `2` for any malformed entry; you must also verify that every parsed `<N>` is `0` (the parser's first stdout line). Only mark `✅ Fixed` when both: (a) every entry parses cleanly, AND (b) every `<cmd> -- exit <N>` entry has `<N>=0`. If any entry fails parse or any rc is non-zero, treat the worker output as `partial` regardless of what its `Status:` line says — workers that violate the safety net should not silently bypass the cross-check.
    - `Status: partial`: report the validation gap in Traditional Chinese and ask the user whether to accept-as-fixed, retry, or defer.
    - `Status: failed`: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A. Do not mark `✅ Fixed`.
 9. Validate modified file scope via the shared helper. The helper is byte-exact for paths containing spaces, literal newlines, non-ASCII bytes, and forces per-file enumeration of untracked-dir contents (`-uall`) so workers cannot hide files inside a pre-existing untracked dir:
 
    ```bash
-   # Defensive guard: if OWNED_FILES wasn't maintained per Step 6, fail loudly
-   # with a clear message. The "" placeholder under set -u keeps the array
-   # expansion safe even on bash 3.2 (macOS default).
-   if [ "${#OWNED_FILES[@]:-0}" -eq 0 ]; then
-     echo "BUG: OWNED_FILES is empty. Step 6 must accumulate owned files via OWNED_FILES+=(...)." >&2
+   # Defensive guard: if OWNED_FILES is unset (the Session-setup `declare -a`
+   # never ran — e.g. the user deferred every issue and step 6 never executed)
+   # OR is empty (declared but never appended to), fail loudly with a clear
+   # message. The `${OWNED_FILES[@]+x}` form yields literal "x" when the
+   # array is set and empty when it's unset, so we can test both cases
+   # under `set -u` without an "unbound variable" crash. Bash 3.2 (macOS
+   # default /bin/bash) does NOT save `${#arr[@]:-0}` from set-u-on-unset;
+   # the +x test is the portable form.
+   if [ -z "${OWNED_FILES[@]+x}" ] || [ "${#OWNED_FILES[@]}" -eq 0 ]; then
+     echo "BUG: OWNED_FILES is unset or empty." >&2
+     echo "Session setup in Step 6 must declare OWNED_FILES=() and step 6 must accumulate" >&2
+     echo "owned files via OWNED_FILES+=(...) for each fix-worker dispatch." >&2
      echo "If this resolver session was resumed in a fresh shell, the array state is lost;" >&2
      echo "abort this session and restart from Step 1 rather than continuing with an empty array." >&2
      exit 2

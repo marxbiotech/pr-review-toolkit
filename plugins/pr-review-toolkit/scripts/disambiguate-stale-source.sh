@@ -17,8 +17,15 @@
 #
 # Usage: ./disambiguate-stale-source.sh <PR_NUMBER>
 # Exit codes:
-#   1 = always (this helper is invoked from the exit-1 branch of callers;
-#       it propagates exit 1 to make caller flow control explicit)
+#   1  = disambiguation succeeded; stderr contains the recovery guidance
+#        appropriate to whichever exit-1 cause fired (sync-failed vs
+#        stale-source-id-repair-failed). This is the "nominal" outcome —
+#        the helper was invoked from the exit-1 branch of a caller, and
+#        it propagates exit 1 to keep caller flow explicit.
+#   10 = cannot disambiguate (cache file missing or malformed JSON);
+#        stderr contains a "manual intervention required" diagnostic.
+#        Downstream tooling can distinguish 1 (nominal advice ready)
+#        from 10 (investigation required).
 
 set -euo pipefail
 
@@ -36,17 +43,23 @@ CACHE_FILE="${CACHE_DIR}/pr-${PR_NUMBER}.json"
 if [ ! -f "$CACHE_FILE" ]; then
   echo "Cache file vanished between write and post-write inspection: $CACHE_FILE" >&2
   echo "Cannot disambiguate exit 1 cause without the cache envelope. Investigate manually." >&2
-  exit 1
+  exit 10
 fi
 
-# Capture jq's stderr into the variable on failure so the diagnostic can show
-# the actual jq error rather than silently taking the wrong branch (the
-# original prose form used 2>/dev/null + empty STALE, which routed to the
-# "sync failed" branch even when the real cause was a malformed cache).
-if ! STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>&1); then
-  echo "jq failed reading $CACHE_FILE: $STALE" >&2
+# Capture jq's stderr SEPARATELY so a future jq build that emits warnings to
+# stderr on success (e.g. deprecation notes) doesn't contaminate $STALE.
+# The earlier `2>&1` form would have routed any stderr-on-success into
+# $STALE, causing `[ "$STALE" = "true" ]` to misroute to the wrong branch —
+# exactly the silent-misdiagnosis class this script was extracted to prevent.
+JQ_ERR=$(mktemp)
+trap 'rm -f "$JQ_ERR"' EXIT
+
+jq_rc=0
+STALE=$(jq -r '.stale_source_id // false' "$CACHE_FILE" 2>"$JQ_ERR") || jq_rc=$?
+if [ "$jq_rc" -ne 0 ]; then
+  echo "jq failed reading $CACHE_FILE: $(cat "$JQ_ERR")" >&2
   echo "Cannot disambiguate exit 1 cause; the cache envelope may be malformed." >&2
-  exit 1
+  exit 10
 fi
 
 if [ "$STALE" = "true" ]; then

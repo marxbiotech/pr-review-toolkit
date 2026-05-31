@@ -107,6 +107,8 @@ Remaining risk:
 - `<command> -- exit <N>` — a real validation command and its captured exit code. The separator is the ASCII double-dash ` -- ` (space + two hyphens + space) to keep encoding-stable and easy to regex (`/^- (.*) -- exit (-?\d+)$/`); do not use Unicode em-dash. Commands containing the literal ` -- ` substring should be quoted (e.g. `'bash -c "..."` ` instead of bare).
 - `none possible: <reason>` — an explicit statement that no validation applies, with `<reason>` explaining why (e.g. "comment-only edit" or "no covering test exists in the repo").
 
+The grammar is unit-tested by `tests/parse-validation-entry-test.sh` (12 cases) and parsed at the consumer side by `${PR_REVIEW_TOOLKIT_ROOT}/scripts/parse-validation-entry.sh`. Workers should follow the grammar exactly; the resolver invokes the parser to decide success-eligibility (see `pr-review-resolver` step 8).
+
 `Status` semantics — the resolver parses this line and uses it to decide whether to mark `✅ Fixed`:
 
 - `success`: the change addresses the issue and every `Validation:` entry is either `-- exit 0` or `none possible: <reason>`. A mix is allowed — e.g. a doc edit that also passes `git diff --check` reports both forms and is `success`.

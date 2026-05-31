@@ -246,7 +246,8 @@ The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugi
 | `cache-cleanup.sh` | Remove stale `.pr-review-cache/` entries |
 | `extract-content-hash.sh` | Extract the CAS `content_hash` from the local cache and trigger `cache-sync.sh` recovery on missing/malformed values. Unit-tested in `tests/extract-content-hash-test.sh` |
 | `disambiguate-stale-source.sh` | Disambiguate `cache-write-comment.sh` exit 1 by inspecting the `stale_source_id` flag and printing the matching recovery command. Unit-tested in `tests/disambiguate-stale-source-test.sh` |
-| `check-fix-worker-scope.sh` | Validate that fix-worker file changes match the union of declared owned files; byte-exact for spaces / newlines / non-ASCII / renames / files-in-untracked-dirs. Unit-tested in `tests/check-fix-worker-scope-test.sh` |
+| `check-fix-worker-scope.sh` | Validate that fix-worker file changes match the union of declared owned files; byte-exact for spaces / newlines / non-ASCII / renames / files-in-untracked-dirs / gitignored writes. Unit-tested in `tests/check-fix-worker-scope-test.sh` |
+| `parse-validation-entry.sh` | Parse a single `Validation:` entry from a fix-worker output (`<cmd> -- exit <N>` or `none possible: <reason>`). The resolver invokes this per-entry to cross-check `Status: success` claims against the safety net. Unit-tested in `tests/parse-validation-entry-test.sh` |
 | `upsert-review-comment.sh` | Low-level GitHub create/update primitive used by `cache-write-comment.sh` (not called directly by skills) |
 | `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist inline comments |
 | `review-metadata-upgrade.sh` | Normalize PR review metadata to schema 1.1 |
@@ -255,7 +256,7 @@ The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugi
 
 Scripts fall into three call-site categories:
 
-- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `extract-content-hash.sh` (CAS hash extraction with recovery), `disambiguate-stale-source.sh` (exit-1 disambiguation), `check-fix-worker-scope.sh` (resolver scope check), `find-review-comment.sh` (currently called by Claude `gemini-review-integrator/SKILL.md`), `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
+- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `extract-content-hash.sh` (CAS hash extraction with recovery), `disambiguate-stale-source.sh` (exit-1 disambiguation), `check-fix-worker-scope.sh` (resolver scope check), `parse-validation-entry.sh` (fix-worker validation entry parser), `find-review-comment.sh` (currently called by Claude `gemini-review-integrator/SKILL.md`), `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
 - **Internal helpers** (used by the scripts above, not called directly by skills): `upsert-review-comment.sh`.
 - **Maintenance / out-of-band CLI** (run by humans or by slash commands outside the canonical review workflow): `cache-cleanup.sh` (stale cache pruning; explicitly forbidden from codex-fix-worker per the resolver-managed contract — enforced by the CI lint at `.github/workflows/validate.yml`), `deploy-pr.sh` (used by the `/deploy-pr` slash command, not a skill).
 
