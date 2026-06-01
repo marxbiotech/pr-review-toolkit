@@ -17,10 +17,13 @@ pr-review-and-document
 
 ```text
 codex-review-pass
+pr-review-and-document
+gemini-review-integrator
+pr-review-resolver
 codex-fix-worker
 ```
 
-兩個 Codex skills 必須使用現有 cache/comment contract，不建立額外狀態檔，避免 workflow 分裂。
+Codex skills 必須使用現有 cache/comment contract，不建立額外狀態檔，避免 workflow 分裂。
 
 ## Single Source of Truth
 
@@ -91,9 +94,9 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
 ```json
 {
   "schema_version": "1.1",
-  "created_by": "codex-review-pass",
-  "last_writer": "codex-review-pass",
-  "skill": "codex-review-pass",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
+  "skill": "pr-review-and-document",
   "review_round": 1,
   "created_at": "2026-04-30T12:00:00Z",
   "updated_at": "2026-04-30T12:00:00Z",
@@ -117,6 +120,7 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
     "codex": {
       "last_reviewed_head": "abc123",
       "last_reviewed_at": "2026-04-30T12:00:00Z",
+      "agents_run": ["code-reviewer", "code-simplifier", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "comment-analyzer"],
       "posted_finding_ids": []
     }
   }
@@ -125,7 +129,7 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
 
 `created_by` 表示第一次建立 canonical review comment 的 producer。`last_writer` 表示最後一次更新 comment 的 skill。`skill` 是 legacy 欄位；bootstrap 時設為 `last_writer`（也就是與 `created_by` 相同），append/upgrade 既有 1.0 comment 時可保留舊值一個過渡 release。新版邏輯應優先讀取 `review_sources`。
 
-`review_round` 是 PR-global review producer 輪次，不是 per-source 輪次。`pr-review-and-document` 與 `codex-review-pass` 這類 review producer 在產生含有新增 findings 的 review pass 時應 increment；空 review pass 只更新 source timestamp，不 increment。`gemini-review-integrator` 只整合外部 comment，不 increment；`codex-fix-worker` 與 `pr-review-resolver` 只修復或更新狀態，也不 increment。
+`review_round` 是 PR-global review producer 輪次，不是 per-source 輪次。Claude/Codex `pr-review-and-document` 這類會發布 review results 的 producer 在產生含有新增 findings 的 review pass 時應 increment；空 review pass 只更新 source timestamp，不 increment。`codex-review-pass` 只產生 read-only review bundle，不直接 increment。`gemini-review-integrator` 只整合外部 comment，不 increment；`codex-fix-worker` 與 `pr-review-resolver` 只修復或更新狀態，也不 increment。
 
 `Reviewer Sources` 顯示行是由 metadata 派生的 UI 字串，依固定順序 `Claude, Gemini, Codex` 列出有參與的 source。參與判斷：Claude/Codex 使用 `last_reviewed_at != null`，Gemini 使用 `last_integrated_at != null` 或 `consumed_comment_ids` 非空。
 
@@ -150,13 +154,25 @@ review-metadata-replace.sh --stdin --metadata-file <metadata-json-file>
 | `agents_run` | `review_sources.claude.agents_run` | 搬移到 Claude source；Phase 2 寫入時 top-level 與 nested 同時保留，read 時優先 nested；移除 top-level 必須另開 release 並寫入 release notes |
 | `gemini_integrated_ids` | `review_sources.gemini.consumed_comment_ids` | numeric GitHub comment IDs；避免與 Codex finding IDs 混淆 |
 | `gemini_integration_date` | `review_sources.gemini.last_integrated_at` | 保留整合時間 |
+| 無 | `review_sources.codex.agents_run` | Codex review pass 實際完成的六個 read-only subagents |
 | 無 | `review_sources.codex.posted_finding_ids` | Codex 自產 finding IDs |
 
 不支援 downgrade。多來源 metadata 上線後，不應再使用舊版 Claude skills 寫回同一個 PR review comment，否則可能抹掉 `review_sources` 與 `[Codex]` issues。
 
 ## codex-review-pass
 
-`codex-review-pass` 是 Codex 的 review producer。它必須支援兩種模式。
+`codex-review-pass` 是 Codex 的 read-only review producer。它負責像 Claude `review-pr` 一樣同時啟動六個 review subagents，彙整結果，並回傳 normalized review bundle。它不負責建立 comment、更新 `.pr-review-cache`、修改 metadata、commit 或 push。
+
+六個 subagents 固定為：
+
+- `code-reviewer`
+- `code-simplifier`
+- `silent-failure-hunter`
+- `type-design-analyzer`
+- `pr-test-analyzer`
+- `comment-analyzer`
+
+每個 subagent 只讀 PR diff / working tree / existing review context，回傳 findings。主 `codex-review-pass` 去重、分類 severity、產生 finding IDs，並把結果交給 `pr-review-and-document`。
 
 ### Environment Contract
 
@@ -177,17 +193,30 @@ PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 
 不要在 Codex skill 中使用 `${CLAUDE_PLUGIN_ROOT}`；那是 Claude Code plugin runtime 的環境變數。
 
+### Review Bundle
+
+`codex-review-pass` 的輸出必須可被 `pr-review-and-document` 直接消費：
+
+```text
+Codex review bundle:
+- PR number
+- Head SHA
+- Agents completed
+- New findings grouped by critical / important / suggestion
+- Strengths
+- Type ratings
+- Follow-up notes
+```
+
+## Codex pr-review-and-document
+
+Codex `pr-review-and-document` 是 comment/cache/documentation owner。它負責呼叫 `codex-review-pass`，接收六 subagent 彙整後的 review bundle，並把結果寫入 canonical PR review comment。
+
+它支援兩種模式。
+
 ### Bootstrap Mode
 
 當尚未存在 canonical PR review comment 時，Codex 可以成為第一步：
-
-```text
-codex-review-pass
-→ creates canonical PR review comment
-→ creates .pr-review-cache/pr-#.json through cache-write-comment.sh
-```
-
-判斷方式：
 
 ```bash
 PR_NUMBER=$("${PR_REVIEW_TOOLKIT_ROOT}/scripts/get-pr-number.sh")
@@ -210,9 +239,9 @@ Bootstrap comment 必須使用既有 marker：
 <!-- pr-review-metadata
 {
   "schema_version": "1.1",
-  "created_by": "codex-review-pass",
-  "last_writer": "codex-review-pass",
-  "skill": "codex-review-pass",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
+  "skill": "pr-review-and-document",
   "review_round": 1,
   "review_sources": {
     "claude": { "last_reviewed_head": null, "last_reviewed_at": null, "agents_run": [] },
@@ -220,6 +249,7 @@ Bootstrap comment 必須使用既有 marker：
     "codex": {
       "last_reviewed_head": "abc123",
       "last_reviewed_at": "2026-04-30T12:00:00Z",
+      "agents_run": ["code-reviewer", "code-simplifier", "silent-failure-hunter", "type-design-analyzer", "pr-test-analyzer", "comment-analyzer"],
       "posted_finding_ids": ["codex:src/foo.ts:symbol-name:error-propagation:abcd1234"]
     }
   }
@@ -259,12 +289,12 @@ Bootstrap comment 必須使用既有 marker：
 
 1. 讀取現有 metadata 與 issue sections
 2. 將 metadata in-memory upgrade 到 `1.1`
-3. review 目前 PR diff / working tree
-4. 產生 finding ID
+3. 呼叫 `codex-review-pass` review 目前 PR diff / working tree，並取得 normalized review bundle
+4. 使用 review bundle 中的 finding ID
 5. 依 `review_sources.codex.posted_finding_ids` 與現有 section 內容去重
 6. 只插入新的 Codex findings
 7. 若有新增 finding，increment PR-global `review_round`；若沒有新發現，只更新 `last_reviewed_head` / `last_reviewed_at`，不 increment
-8. 更新 summary counts、`updated_at`、`last_writer`、`review_sources.codex`
+8. 更新 summary counts、`updated_at`、`last_writer: pr-review-and-document`、`review_sources.codex`
 9. 透過 `cache-write-comment.sh --stdin` 寫回
 
 Codex finding 一律標示來源：
@@ -303,7 +333,7 @@ codex:<file>:<symbol-or-nearest-heading>:<diagnostic-kind>:<snippet-hash>
 
 ## codex-fix-worker
 
-`codex-fix-worker` 是 Codex 的 bounded implementation skill。它修復 dev agent 指派的一個 review issue，並更新同一份 canonical review comment 中該 issue 的狀態。
+`codex-fix-worker` 是 Codex 的 resolver-managed bounded implementation skill。它只修復 `pr-review-resolver` 指派的一個 review issue，並回報修改檔案、validation 與剩餘風險。它不更新 canonical review comment，也不讀寫 `.pr-review-cache`。
 
 必要輸入：
 
@@ -317,31 +347,31 @@ Decision:
 Fix using approach X.
 Owned files:
 - path/to/file.ts
+Resolver context:
+This issue was selected by the user in pr-review-resolver.
 ```
 
 工作流程：
 
-1. 讀取 `.pr-review-cache/pr-#.json`，確認目標 issue 仍是 `⚠️` 或 `🔴`
-2. 將 metadata in-memory upgrade 到 `1.1`
-3. 只修改 owned files；若必須修改其他檔案，停止並回報 dev agent
-4. 執行相關驗證，例如測試、lint、`git diff --check`
-5. 修完後重新讀取最新 cache，並使用 compare-and-swap 或 dev-agent 序列化避免覆蓋其他 tool 更新
-6. 將該 issue 狀態改為 `✅`，補上修復摘要與 validation
-7. 保持既有 `review_round` 不變
-8. 使用 `cache-write-comment.sh --stdin` 寫回
-9. 回報 modified files、validation result、remaining risk、commit message draft
+1. 確認 issue、使用者選擇的修復方案與 owned files 都存在。
+2. 閱讀 referenced code 與必要的鄰近 context。
+3. 只修改 owned files；若必須修改其他檔案，停止並回報 `pr-review-resolver` 要求擴大 scope。
+4. 執行相關驗證，例如測試、lint、`git diff --check`、script syntax check。
+5. 回報 modified files、validation result、fix summary、remaining risk、commit message draft。
 
 `codex-fix-worker` 可以：
 
 - 修改 code
-- 更新該 issue 的狀態與修復說明
-- 更新 summary counts 與 metadata timestamp
+- 執行 targeted validation
+- 回報修復結果給 `pr-review-resolver`
 
 `codex-fix-worker` 不可以：
 
 - 自行把 issue 標記為 Deferred 或 N/A
+- 讀寫 `.pr-review-cache`
+- 呼叫 `cache-read-comment.sh` 或 `cache-write-comment.sh`
+- 更新 canonical review comment 或 metadata
 - 修改無關 issue 狀態
-- 重寫整份 review comment 架構
 - 建立新 cache 檔或新 PR comment
 - commit、push、merge
 
@@ -355,7 +385,7 @@ Validation:
 - npm test -- ...
 
 Review comment update:
-- Marked "[Codex] Missing error propagation" as fixed.
+- None. pr-review-resolver updates the canonical review comment.
 
 Commit message draft:
 fix(scope): address missing error propagation
@@ -364,7 +394,60 @@ Remaining risk:
 - ...
 ```
 
-dev agent 或人類負責 commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
+`pr-review-resolver`、dev agent 或人類負責更新 review comment、commit / push。Codex 修改完但未 commit 前，不應啟動下一輪 review pass，避免 review 工具把未整理的 working tree 當成噪音。
+
+## Codex gemini-review-integrator
+
+Codex `gemini-review-integrator` 對應 Claude `gemini-review-integrator` 的行為。它負責把 Gemini Code Assist inline review comments 整合進同一份 canonical PR review comment。
+
+責任：
+
+1. 使用 `get-pr-number.sh` 找到 PR，並用 `find-review-comment.sh` 確認 canonical review comment 已存在。
+2. 使用 `fetch-gemini-comments.sh` 取得 Gemini Code Assist inline comments。
+3. 過濾 outdated comments (`is_outdated: true`)。
+4. 以 `review_sources.gemini.consumed_comment_ids` 為主、legacy `gemini_integrated_ids` 為 fallback 去重。
+5. 將 Gemini priority 映射到 canonical sections：
+   - high + security → Critical
+   - high → Important
+   - medium + security → Important
+   - medium / low → Suggestions
+6. 以 `[Gemini]` prefix 插入 canonical severity sections，保持初始狀態 `⚠️`。
+7. metadata dual-write：
+   - `review_sources.gemini.consumed_comment_ids`
+   - `review_sources.gemini.last_integrated_at`
+   - legacy `gemini_integrated_ids`
+   - legacy `gemini_integration_date`
+8. 保留 `review_sources.codex`、`review_sources.claude`、`[Codex]` issues 與未標來源的 Claude issues。
+9. 保持 `review_round` 不變；Gemini integration 不是新的 review producer。
+10. 透過 `cache-write-comment.sh --stdin --expected-content-hash` 寫回。
+
+## Codex pr-review-resolver
+
+Codex `pr-review-resolver` 是互動式決策協調器，不是 `codex-fix-worker` 的別名。它對應 Claude `pr-review-resolver` 的行為：讀取 canonical review comment，逐一呈現未解決 issue，用繁體中文和使用者討論處理方式，等待使用者決定後才執行。
+
+責任：
+
+1. 使用 `get-pr-number.sh` 與 `cache-read-comment.sh` 讀取當前 PR 的 canonical review comment。
+2. 解析未解決項目：
+   - `⚠️` / `🔴`
+   - `[Codex]` / `[Gemini]` issue
+   - 無來源 prefix 的 Claude issue
+   - unchecked Action Plan items
+3. 每次只處理一個 issue，以繁中說明問題、影響、檔案位置與選項。
+4. 等待使用者決定：Fix / Deferred / N/A / Skip。
+5. 若使用者選擇 Fix，確認 owned files 後才派發 bounded fix work；使用 managed-only `codex-fix-worker` contract 修單一 issue。
+6. 若使用者選擇 Deferred 或 N/A，記錄自包含的 Design Decision 註解，避免依賴 PR link。
+7. 統一更新 canonical review comment 狀態、summary counts、metadata `last_writer: pr-review-resolver`，並保持 `review_round` 不變。
+8. 一律透過 `cache-write-comment.sh --stdin --expected-content-hash` 寫回，不直接使用 `gh api`。
+
+和 `codex-fix-worker` 的差異：
+
+| Skill | 職責 | 是否和使用者逐一討論 | 是否修 code | 是否更新整體 resolver 狀態 |
+|---|---|---:|---:|---:|
+| `pr-review-resolver` | 互動式 issue 決策與狀態協調 | 是 | 可協調 worker | 是 |
+| `codex-fix-worker` | 修一個已決策 issue | 否 | 是 | 否，只回報 resolver |
+
+`pr-review-resolver` 不應跳過使用者決策，也不應自行將 issue 標記 Deferred / N/A。若多個修復會修改同一檔案，resolver 必須序列化或等待前一個 worker 完成，避免並行修改衝突。
 
 ## Cross-Tool Workflow
 
@@ -373,29 +456,33 @@ Claude-first workflow：
 ```text
 Claude:    pr-review-and-document
 Claude:    gemini-review-integrator
-Codex:     codex-review-pass
-Codex:     codex-fix-worker for selected issues
+Codex:     pr-review-and-document
+Codex:     gemini-review-integrator
+Codex:     pr-review-resolver
+Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
-Claude:    pr-review-resolver when human decision is needed
+Claude:    pr-review-resolver when Claude-side human decision flow is preferred
 ```
 
 Codex-first workflow：
 
 ```text
-Codex:     codex-review-pass
-Claude:    gemini-review-integrator
-Codex:     codex-fix-worker for selected issues
+Codex:     pr-review-and-document
+Codex:     gemini-review-integrator
+Codex:     pr-review-resolver
+Codex:     codex-fix-worker for selected issues selected by resolver
 dev agent: commit fix-worker changes
-Claude:    pr-review-resolver when human decision is needed
+Claude:    pr-review-resolver when Claude-side human decision flow is preferred
 ```
 
 Loop：
 
 ```text
 Claude or Codex: review pass
+Codex or Claude: resolver decides selected issues
 Codex or Claude: fix selected issues
 dev agent:       commit changes
-Claude:          resolver for ambiguous decisions
+Claude/Codex:    resolver for ambiguous decisions
 repeat until Summary shows no remaining blocking issues
 ```
 
@@ -422,6 +509,22 @@ plugins/pr-review-toolkit/
 ├── codex/
 │   └── skills/
 │       ├── codex-review-pass/
+│       │   ├── references/
+│       │   │   └── agents/
+│       │   │       ├── code-reviewer.md
+│       │   │       ├── code-simplifier.md
+│       │   │       ├── silent-failure-hunter.md
+│       │   │       ├── type-design-analyzer.md
+│       │   │       ├── pr-test-analyzer.md
+│       │   │       └── comment-analyzer.md
+│       │   └── SKILL.md
+│       ├── pr-review-and-document/
+│       │   └── SKILL.md
+│       ├── gemini-review-integrator/
+│       │   └── SKILL.md
+│       ├── pr-review-resolver/
+│       │   ├── references/
+│       │   │   └── interaction-example.md
 │       │   └── SKILL.md
 │       └── codex-fix-worker/
 │           └── SKILL.md
@@ -465,8 +568,11 @@ Phase 2 must ship Claude compatibility updates and Codex skill scaffolding toget
 - Update `gemini-review-integrator` to migrate and preserve `review_sources`
 - Update `pr-review-resolver` to recognize `[Codex]` issues and untagged Claude issues
 - Add `codex/skills/codex-review-pass/SKILL.md`
+- Add `codex/skills/pr-review-and-document/SKILL.md`
+- Add `codex/skills/gemini-review-integrator/SKILL.md`
+- Add `codex/skills/pr-review-resolver/SKILL.md`
 - Add `codex/skills/codex-fix-worker/SKILL.md`
-- Ensure both Codex skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state
+- Ensure Codex write-capable skills use only `cache-read-comment.sh` and `cache-write-comment.sh` for review state
 
 ### Phase 3: Packaging
 

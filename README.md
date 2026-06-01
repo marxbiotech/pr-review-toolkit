@@ -53,8 +53,11 @@ This repository also includes a repo-scoped Codex marketplace at `.agents/plugin
 
 | Skill | Description |
 |-------|-------------|
-| **codex-review-pass** | Run a Codex PR review pass and create or update the canonical PR review comment |
-| **codex-fix-worker** | Fix one selected PR review issue with a bounded set of owned files; update only that issue's status in the canonical review comment |
+| **codex-review-pass** | Run six read-only Codex review subagents in parallel and return one deduplicated review bundle |
+| **pr-review-and-document** | Publish the Codex review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
+| **gemini-review-integrator** | Integrate Gemini Code Assist inline comments into the canonical PR review comment |
+| **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
+| **codex-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
 
 Until public Codex marketplace distribution is finalized, install from source by cloning the repository and registering it as a local plugin marketplace in Codex. The current [Codex plugin docs](https://developers.openai.com/codex/plugins/build?install-scope=workspace) describe `codex plugin marketplace add .` for this workspace-scoped flow; run `codex plugin --help` against your installed version if the CLI has changed. The marketplace entry points at the packaged plugin directory (`"./plugins/pr-review-toolkit"`), and the manifest there points Codex at `./codex/skills/` (relative to that plugin root), so keep the repository layout intact:
 
@@ -73,7 +76,7 @@ Set the toolkit root for Codex sessions that run these skills. For source instal
 export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
 ```
 
-Both Codex skills use `.pr-review-cache/pr-{N}.json` as the only review state contract and write through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers.
+Codex review is split into distinct responsibilities. `codex-review-pass` is read-only: it launches the six review subagents (`code-reviewer`, `code-simplifier`, `silent-failure-hunter`, `type-design-analyzer`, `pr-test-analyzer`, and `comment-analyzer`) and returns a normalized bundle. `pr-review-and-document` owns review publishing and writes that bundle through the shared `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-*.sh` helpers. `gemini-review-integrator` merges Gemini Code Assist feedback into that same canonical comment. `pr-review-resolver` is the interactive decision coordinator for unresolved findings and owns all resolver status updates. `codex-fix-worker` is resolver-managed only: it fixes exactly one selected issue with bounded owned files and never writes the review comment/cache directly.
 
 **Recommended persistent command approvals for ACP-driven Codex runs:**
 
@@ -83,6 +86,9 @@ ACP approval matching is a literal prefix match against the command Codex execut
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/get-pr-number.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-read-comment.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-write-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/cache-sync.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/find-review-comment.sh"]
+["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/fetch-gemini-comments.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-upgrade.sh"]
 ["/path/to/pr-review-toolkit/plugins/pr-review-toolkit/scripts/review-metadata-replace.sh"]
 ["gh", "api"]
@@ -107,6 +113,36 @@ Or more specifically:
 - "review PR and save results"
 - "run PR review with documentation"
 - "create PR review document"
+
+### Codex PR Review and Document
+
+Run a Codex review with six parallel read-only review subagents, then publish one canonical PR comment:
+
+```
+Run a Codex PR review and document the results
+```
+
+For analysis only, without writing the PR comment, ask for:
+
+```
+Run a Codex review pass
+```
+
+### Codex PR Review Resolver
+
+Resolve existing review findings one by one with Codex. The resolver discusses each unresolved item in Traditional Chinese, asks for a decision, coordinates bounded fix work, and updates the canonical review comment through `.pr-review-cache`:
+
+```
+Resolve PR review findings with Codex
+```
+
+### Codex Gemini Review Integrator
+
+Integrate Gemini Code Assist inline review comments into the canonical PR review comment:
+
+```
+Integrate Gemini review comments with Codex
+```
 
 ### Gemini Review Integrator
 
@@ -137,6 +173,8 @@ Or:
 
 ## Workflow
 
+### Claude flow
+
 ```mermaid
 graph LR
     A[Create PR] --> B[pr-review-and-document]
@@ -148,6 +186,32 @@ graph LR
     F --> G[Issues Resolved]
     G --> H[Merge PR]
 ```
+
+### Codex flow
+
+The Codex side splits the same workflow across five skills with a clear producer/publisher/integrator/resolver/worker boundary. The diagram below shows the Codex-first variant (Codex runs the review pass and bootstraps the canonical comment). For the mixed Claude-first → Codex-resolver scenario where Claude's `pr-review-and-document` runs first and Codex participates later, see [`docs/codex-integration-design.md`](docs/codex-integration-design.md).
+
+```mermaid
+graph LR
+    A[Create PR] --> B[codex-review-pass]
+    B --> C[pr-review-and-document]
+    C --> D{Gemini reviewed?}
+    D -->|Yes| E[gemini-review-integrator]
+    D -->|No| F[pr-review-resolver]
+    E --> F
+    F -->|user picks Fix| G[codex-fix-worker]
+    G --> F
+    F --> H[Issues Resolved]
+    H --> I[Merge PR]
+```
+
+The five skills map one-to-one to the five role boundaries:
+
+- **Producer** — `codex-review-pass` is read-only and returns a normalized review bundle.
+- **Publisher** — `pr-review-and-document` is the only skill that *bootstraps* the canonical PR comment (creates it from scratch or appends new producer findings). `gemini-review-integrator` and `pr-review-resolver` also write through `cache-write-comment.sh`, but only to update an existing canonical comment (integrate Gemini findings, mark resolver decisions).
+- **Integrator** — `gemini-review-integrator` merges Gemini Code Assist inline comments into the canonical comment.
+- **Resolver** — `pr-review-resolver` owns user interaction and all status updates.
+- **Worker** — `codex-fix-worker` is resolver-managed and performs bounded code edits for one selected issue.
 
 ## PR Comment Structure
 
@@ -170,15 +234,31 @@ The PR review comment includes:
 
 ## Scripts
 
-The plugin includes shared scripts in `scripts/`:
+The plugin includes shared scripts in `scripts/` (authoritative copy) and `plugins/pr-review-toolkit/scripts/` (packaged copy, byte-equal — CI enforces parity):
 
 | Script | Purpose |
 |--------|---------|
-| `find-review-comment.sh` | Find existing PR review comment by metadata marker |
-| `upsert-review-comment.sh` | Create or update PR review comment |
-| `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist comments |
+| `get-pr-number.sh` | Resolve the current branch's PR number via 1-hour `branch-map.json` cache, falling back to `gh` |
+| `find-review-comment.sh` | Find existing PR review comment by metadata marker (cache-first) |
+| `cache-read-comment.sh` | Read the canonical PR review comment from local cache, falling back to GitHub |
+| `cache-write-comment.sh` | Write the canonical comment to local cache and sync to GitHub (CAS via `--expected-content-hash`, retry on transient sync failure) |
+| `cache-sync.sh` | Re-sync local cache to GitHub or refresh cache from GitHub |
+| `cache-cleanup.sh` | Remove stale `.pr-review-cache/` entries |
+| `extract-content-hash.sh` | Extract the CAS `content_hash` from the local cache and trigger `cache-sync.sh` recovery on missing/malformed values. Unit-tested in `tests/extract-content-hash-test.sh` |
+| `disambiguate-stale-source.sh` | Disambiguate `cache-write-comment.sh` exit 1 by inspecting the `stale_source_id` flag and printing the matching recovery command. Unit-tested in `tests/disambiguate-stale-source-test.sh` |
+| `check-fix-worker-scope.sh` | Validate that fix-worker file changes match the union of declared owned files; byte-exact for spaces / newlines / non-ASCII / renames / files-in-untracked-dirs / gitignored writes. Unit-tested in `tests/check-fix-worker-scope-test.sh` |
+| `parse-validation-entry.sh` | Parse a single `Validation:` entry from a fix-worker output (`<cmd> -- exit <N>` or `none possible: <reason>`). The resolver invokes this per-entry to cross-check `Status: success` claims against the safety net. Unit-tested in `tests/parse-validation-entry-test.sh` |
+| `upsert-review-comment.sh` | Low-level GitHub create/update primitive used by `cache-write-comment.sh` (not called directly by skills) |
+| `fetch-gemini-comments.sh` | Fetch and parse Gemini Code Assist inline comments |
 | `review-metadata-upgrade.sh` | Normalize PR review metadata to schema 1.1 |
 | `review-metadata-replace.sh` | Replace the hidden metadata block without changing issue sections |
+| `deploy-pr.sh` | PR deploy helper invoked by the `/deploy-pr` slash command (not a skill) |
+
+Scripts fall into three call-site categories:
+
+- **Skill-facing** (called directly from Codex/Claude SKILL.md workflows): `get-pr-number.sh`, `cache-read-comment.sh`, `cache-write-comment.sh`, `cache-sync.sh`, `extract-content-hash.sh` (CAS hash extraction with recovery), `disambiguate-stale-source.sh` (exit-1 disambiguation), `check-fix-worker-scope.sh` (resolver scope check), `parse-validation-entry.sh` (fix-worker validation entry parser), `find-review-comment.sh` (currently called by Claude `gemini-review-integrator/SKILL.md`), `fetch-gemini-comments.sh`, `review-metadata-upgrade.sh`, `review-metadata-replace.sh`.
+- **Internal helpers** (used by the scripts above, not called directly by skills): `upsert-review-comment.sh`.
+- **Maintenance / out-of-band CLI** (run by humans or by slash commands outside the canonical review workflow): `cache-cleanup.sh` (stale cache pruning; explicitly forbidden from codex-fix-worker per the resolver-managed contract — enforced by the CI lint at `.github/workflows/validate.yml`), `deploy-pr.sh` (used by the `/deploy-pr` slash command, not a skill).
 
 ## License
 

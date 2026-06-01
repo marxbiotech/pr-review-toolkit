@@ -527,11 +527,16 @@ git commit -m "chore: ignore PR review cache directory"
 
 1. 確認 `.pr-review-cache/` 目錄存在
 2. 確認對應 PR 編號的快取檔案存在
-3. 使用 `--force-refresh` 繞過快取並重建
+3. 對 `cache-read-comment.sh` 使用 `--force-refresh` 旗標繞過快取並重建（注意：`cache-sync.sh` 本身不接受 `--force-refresh`，它內建就會強制重新取得）
 
 ### 快取內容過期
 
-執行 `cache-sync.sh` 強制從 GitHub 重新取得，或使用 `--force-refresh` 標記。
+兩個腳本都會把最新內容寫入本地快取（兩者都不是 read-only），差別在診斷輸出：
+
+- `cache-sync.sh "$PR_NUMBER"` 輸出詳細的 hash 對比、cached_at 時間戳等診斷資訊，適合人工偵錯時使用。
+- `cache-read-comment.sh "$PR_NUMBER" --force-refresh` 只輸出 comment 內容（純內容串流），適合 script pipeline 使用。
+
+兩者都會更新 `.pr-review-cache/pr-${PR_NUMBER}.json`。
 
 ### 快取佔用空間
 

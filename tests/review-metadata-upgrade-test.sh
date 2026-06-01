@@ -213,4 +213,34 @@ if [ -s /tmp/review-metadata-upgrade-array.out ]; then
   exit 1
 fi
 
+# Bootstrap seed: the minimal `{}` metadata input that codex/skills/pr-review-and-document
+# pipes when no canonical comment exists yet. The upgrade script must turn this into a
+# complete schema-1.1 envelope with all review_sources keys populated and empty defaults.
+# Pinning this fixture freezes the bootstrap contract — if a future hardening of the jq
+# filter starts rejecting `{}` as "missing required field", this test fails loudly instead
+# of silently breaking pr-review-and-document's first-run path.
+bootstrap_input=$'<!-- pr-review-metadata\n{}\n-->\n'
+bootstrap=$(printf '%s' "$bootstrap_input" | "$SCRIPT" --stdin --last-writer pr-review-and-document)
+assert_jq "$bootstrap" '.schema_version' '1.1'
+assert_jq "$bootstrap" '.created_by' 'pr-review-and-document'
+assert_jq "$bootstrap" '.last_writer' 'pr-review-and-document'
+assert_jq "$bootstrap" '.skill' 'pr-review-and-document'
+assert_jq "$bootstrap" '.review_sources.claude.last_reviewed_head' 'null'
+assert_jq "$bootstrap" '.review_sources.claude.last_reviewed_at' 'null'
+# `| type == "array"` pins array-vs-null. The earlier `| length` form returned
+# `0` for both `[]` and `null`, so a regression that dropped `arr()` coercion
+# from the jq filter would silently pass the count assertion.
+assert_jq "$bootstrap" '.review_sources.claude.agents_run | type' 'array'
+assert_jq "$bootstrap" '.review_sources.claude.agents_run | length' '0'
+assert_jq "$bootstrap" '.review_sources.gemini.consumed_comment_ids | type' 'array'
+assert_jq "$bootstrap" '.review_sources.gemini.consumed_comment_ids | length' '0'
+assert_jq "$bootstrap" '.review_sources.gemini.last_integrated_at' 'null'
+assert_jq "$bootstrap" '.review_sources.codex.last_reviewed_head' 'null'
+assert_jq "$bootstrap" '.review_sources.codex.last_reviewed_at' 'null'
+assert_jq "$bootstrap" '.review_sources.codex.posted_finding_ids | type' 'array'
+assert_jq "$bootstrap" '.review_sources.codex.posted_finding_ids | length' '0'
+assert_jq "$bootstrap" '.agents_run | type' 'array'
+assert_jq "$bootstrap" '.agents_run | length' '0'
+assert_jq "$bootstrap" '(.agents_run == .review_sources.claude.agents_run)' 'true'
+
 echo "review-metadata-upgrade tests passed"

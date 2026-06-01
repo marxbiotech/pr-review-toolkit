@@ -406,6 +406,120 @@ jobs:
           fi
           echo "Validated $skill_count Codex skill(s)"
 
+      - name: Validate SKILL.md script references resolve
+        # Greps every Codex SKILL.md for ${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh references
+        # and asserts each named script exists and is executable in BOTH script trees
+        # (authoritative + packaged). Catches typos and renamed scripts at CI time
+        # instead of surfacing as a confusing runtime error inside Codex.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          script_trees=("scripts" "plugins/pr-review-toolkit/scripts")
+          fail=0
+          unique_refs=0
+
+          # Enumerate SKILL.md files first so we can fail loudly if the glob
+          # matches zero (skill dir moved or renamed). nullglob + check-then-loop
+          # avoids the older anti-pattern where the lint silently passed by
+          # iterating zero items.
+          skill_files=(plugins/pr-review-toolkit/codex/skills/*/SKILL.md)
+          if [ "${#skill_files[@]}" -eq 0 ]; then
+            echo "::error::No Codex SKILL.md files found under plugins/pr-review-toolkit/codex/skills/*/ — has the skill directory moved?"
+            exit 1
+          fi
+
+          for skill_file in "${skill_files[@]}"; do
+            # Extract every "${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh" reference
+            # and dedupe (a skill may reference the same script several times).
+            #
+            # Capture grep's rc explicitly so only rc=1 (no match) is accepted as
+            # "skill file has zero refs". rc=2+ (file unreadable, permission
+            # denied, malformed regex, glob-no-match against literal pattern)
+            # must fail the lint loudly — wrapping with `|| true` would swallow
+            # those real errors and let a green checkmark mask "lint scanned
+            # zero bytes because the file was unreadable".
+            set +e
+            raw_refs=$(grep -oE '\$\{PR_REVIEW_TOOLKIT_ROOT\}/scripts/[A-Za-z0-9._-]+\.sh' "$skill_file")
+            grep_rc=$?
+            set -e
+            if [ "$grep_rc" -gt 1 ]; then
+              echo "::error::grep failed reading $skill_file (rc=$grep_rc); refusing to declare lint success."
+              exit "$grep_rc"
+            fi
+
+            refs=$(printf '%s\n' "$raw_refs" \
+                   | sed 's|^\${PR_REVIEW_TOOLKIT_ROOT}/scripts/||' \
+                   | sort -u \
+                   | sed '/^$/d')
+            [ -z "$refs" ] && continue
+
+            while IFS= read -r script_name; do
+              # Defensive: skip whitespace-only/empty entries.
+              [ -z "${script_name// /}" ] && continue
+
+              unique_refs=$((unique_refs + 1))
+              for tree in "${script_trees[@]}"; do
+                target="${tree}/${script_name}"
+                if [ ! -x "$target" ]; then
+                  echo "::error::$skill_file references \${PR_REVIEW_TOOLKIT_ROOT}/scripts/${script_name} but ${target} is missing or not executable"
+                  fail=1
+                fi
+              done
+            done <<< "$refs"
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "✅ All $unique_refs unique SKILL.md script references resolve in both trees (${#skill_files[@]} skill files scanned)"
+
+      - name: Lock codex-fix-worker resolver-managed contract
+        # codex-fix-worker is explicitly forbidden from touching review state.
+        # The contract is documented in prose; this grep locks it so a future
+        # edit cannot quietly reintroduce cache/comment writes from the worker.
+        run: |
+          set -euo pipefail
+          worker_skill="plugins/pr-review-toolkit/codex/skills/codex-fix-worker/SKILL.md"
+
+          # Forbidden names cover every script that could mutate review state
+          # (cache-(read|write|cleanup)-comment, cache-sync, find-review-comment,
+          # review-metadata-{upgrade,replace}, upsert-review-comment) plus
+          # any `gh api` invocation. `cache-sync.sh` and `cache-cleanup.sh` are
+          # named without a `-comment` suffix, so they're listed explicitly —
+          # `cache-(...)-comment` alone would miss them. `cache-cleanup` is
+          # included for defense-in-depth: a fix-worker that prunes the cache
+          # would still be touching review state.
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|cache-cleanup|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+
+          # Strip everything OUTSIDE fenced code blocks before scanning. Prose
+          # can mention forbidden script names harmlessly (e.g. a "do NOT call
+          # cache-write-comment.sh" callout in regular paragraphs), but anything
+          # inside ``` ... ``` or ~~~ ... ~~~ fences is treated as authoritative
+          # invocation surface and IS scanned.
+          #
+          # Fence detection covers triple-backtick and triple-tilde fences with
+          # up to 3 leading spaces (CommonMark-legal opening indent). 4-space
+          # indented code blocks are intentionally NOT supported by this lint
+          # in codex-fix-worker/SKILL.md — do not use them there for invocation
+          # examples. (Other SKILL.md files may use indented fences freely;
+          # this lint only scans codex-fix-worker.)
+          if awk '
+              /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
+              in_fence { print }
+            ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. codex-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, cache-cleanup, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            exit 1
+          fi
+          echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"
+
+      - name: Reject PR-round identifiers in source
+        # Delegated to scripts/check-pr-round-identifiers.sh so the lint
+        # logic is covered by tests/check-pr-round-identifiers-test.sh.
+        # See the script header for the full rationale (scan paths,
+        # regex word boundaries, stderr handling, exclusions).
+        run: bash scripts/check-pr-round-identifiers.sh
+
       - name: Run shell test suites
         run: |
           set -euo pipefail
