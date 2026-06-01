@@ -514,77 +514,11 @@ jobs:
           echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"
 
       - name: Reject PR-round identifiers in source
-        # PR-round identifiers in the form "R<round>-<class><number>" (e.g.
-        # round R, critical/important/suggestion class C/I/S, then ordinal)
-        # are meaningful only inside the PR review thread that introduced
-        # them; once the PR is merged and squashed, no future maintainer
-        # will know what they refer to. Manual cleanup cycles have shown
-        # that audits reliably miss sibling sites across multiple rounds.
-        #
-        # This lint is the structural escape valve for that micro-pattern:
-        # reject any new occurrence of `R<digits>-<class><digits>` in any
-        # committed source path. Acceptable forms: stable bug-class
-        # descriptions (e.g. "newline-in-filename truncation bug",
-        # "silent-misdiagnosis bug family") that don't require the reader
-        # to look up the original PR thread.
-        #
-        # Excluded paths: README.md (historical change-log entries
-        # reference R-numbers — new entries should still avoid them) and
-        # the .pr-review-cache/ directory (gitignored, but excluded for
-        # defense in depth so the lint stays robust if a cache file
-        # accidentally gets staged).
-        run: |
-          set -euo pipefail
-          # Scope: every committed source path. Listed explicitly rather
-          # than `.` to keep generated/vendored content (e.g. node_modules
-          # if introduced) outside the scan.
-          #
-          # Regex notes:
-          #   - `(^|[^a-zA-Z])` / `([^a-zA-Z0-9]|$)` boundaries prevent
-          #     matching "MR3-C1" (commercial part numbers) or "R5-S4abc"
-          #     (longer identifiers).
-          #   - Class character set is `[A-Z]` (not `[CIS]`) so future
-          #     round classifications (e.g. blocker, question) are caught
-          #     without re-touching this lint.
-          #   - `-i` catches lowercase variants like the one shown in
-          #     comments / chat transcripts.
-          #
-          # Stderr handling: the previous form used `grep ... 2>/dev/null`
-          # which collapsed "no matches" with "scan target missing" and
-          # "grep crashed". Capture stderr to a temp file and branch on
-          # grep's exit code: 0 = found (fail loudly), 1 = clean,
-          # anything else = grep itself failed (surface its stderr and
-          # exit with grep's rc rather than masking the failure as
-          # "clean").
-          grep_err=$(mktemp)
-          trap 'rm -f "$grep_err"' EXIT
-          set +e
-          grep_out=$(grep -riEn \
-            --exclude=README.md \
-            --exclude-dir=.pr-review-cache \
-            '(^|[^a-zA-Z])R[0-9]+-[A-Z][0-9]+([^a-zA-Z0-9]|$)' \
-            scripts/ tests/ plugins/ docs/ .github/ skills/ commands/ \
-            .agents/ .claude-plugin/ \
-            AGENTS.md CHANGELOG.md CLAUDE.md RELEASING.md 2>"$grep_err")
-          grep_rc=$?
-          set -e
-          case "$grep_rc" in
-            0)
-              echo "::error::PR-round identifiers found in source files:"
-              printf '%s\n' "$grep_out"
-              echo "::error::These references rot after PR merge — replace with stable bug-class names"
-              echo "::error::(e.g. 'newline-truncation bug', 'silent-misdiagnosis bug family')."
-              exit 1
-              ;;
-            1)
-              echo "✅ No PR-round identifiers in source files"
-              ;;
-            *)
-              echo "::error::grep failed (rc=$grep_rc) while scanning for PR-round identifiers:"
-              cat "$grep_err" >&2
-              exit "$grep_rc"
-              ;;
-          esac
+        # Delegated to scripts/check-pr-round-identifiers.sh so the lint
+        # logic is covered by tests/check-pr-round-identifiers-test.sh.
+        # See the script header for the full rationale (scan paths,
+        # regex word boundaries, stderr handling, exclusions).
+        run: bash scripts/check-pr-round-identifiers.sh
 
       - name: Run shell test suites
         run: |

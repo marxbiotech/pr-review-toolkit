@@ -192,4 +192,52 @@ run_script "pytest -q -- exit 0"
 assert_rc "case18 post-fix single-line still works" 0
 assert_stdout_eq "case18 post-fix single-line still works" $'0\npytest -q'
 
+# Case 19: shape-guard against non-integer boundary_count.
+#
+# The fix in case 17 relies on the awk pipeline always emitting exactly
+# one integer to boundary_count. The downstream `[ "$boundary_count"
+# -gt 1 ]` test lives inside an `if` condition, so a future awk
+# refactor that re-introduces per-record `print count` (or any other
+# shape regression) would once again crash the arithmetic test with
+# "integer expression expected" WITHOUT aborting under set -e — the
+# exact crash-in-`if` pattern case 17 was created to defend against.
+#
+# The shape-guard makes that regression structurally impossible: before
+# the arithmetic test, validate that boundary_count is a single
+# non-negative integer and exit 2 with a named internal error if not.
+# This test pins the guard by PATH-injecting a fake awk that always
+# emits "1\n1" (the exact pre-fix broken shape), and asserts the
+# script rejects with rc=2 and stderr naming `boundary_count` —
+# instead of laundering through to the form-1 regex.
+#
+# Reverting the shape-guard makes this test fail: control falls through
+# to `[ "1\n1" -gt 1 ]` which crashes with "integer expression
+# expected" but does not abort (because it's inside `if`), then the
+# form-1 regex greedy-matches the final ` -- exit 0` and returns rc=0,
+# which contradicts the asserted rc=2.
+FAKE_AWK_DIR=$(mktemp -d)
+cat > "$FAKE_AWK_DIR/awk" <<'FAKE'
+#!/bin/bash
+# Drain stdin to avoid SIGPIPE from the upstream printf, then emit the
+# pre-fix broken boundary_count shape (two integers across two lines).
+cat > /dev/null
+printf '1\n1\n'
+exit 0
+FAKE
+chmod +x "$FAKE_AWK_DIR/awk"
+stderr_file=$(mktemp)
+set +e
+STDOUT=$(PATH="$FAKE_AWK_DIR:$PATH" "$SCRIPT" "pytest -q -- exit 0" 2>"$stderr_file")
+RC=$?
+STDERR=$(cat "$stderr_file")
+set -e
+rm -f "$stderr_file"
+rm -rf "$FAKE_AWK_DIR"
+assert_rc "case19 shape-guard rc" 2
+if ! printf '%s' "$STDERR" | grep -q 'boundary_count'; then
+  echo "FAIL [case19 shape-guard]: stderr should name 'boundary_count'" >&2
+  echo "  stderr: $STDERR" >&2
+  exit 1
+fi
+
 echo "parse-validation-entry tests passed"

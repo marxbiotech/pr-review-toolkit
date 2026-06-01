@@ -111,6 +111,20 @@ boundary_count=$(printf '%s' "$stripped" | awk -v p=' -- exit ' '
   }
   END { print count }
 ')
+# Shape guard: the arithmetic test below lives inside an `if`, so a
+# non-integer boundary_count would crash with "integer expression
+# expected" WITHOUT aborting under set -e — exactly the laundering
+# channel the awk `END { print count }` placement was just fixed to
+# close. A future refactor that re-introduces per-record `print` (or
+# any other shape regression) must NOT silently fall through to the
+# form-1 regex. Reject any non-single-non-negative-integer shape
+# loudly before the arithmetic test consumes it.
+case "$boundary_count" in
+  ''|*[!0-9]*)
+    echo "Error: internal — boundary_count must be a single non-negative integer (got: '${boundary_count}')" >&2
+    exit 2
+    ;;
+esac
 if [ "$boundary_count" -gt 1 ]; then
   echo "Error: validation entry contains multiple ' -- exit ' boundaries (got ${boundary_count})" >&2
   echo "       quote commands that legitimately contain ' -- exit ' so only the tail boundary survives" >&2
