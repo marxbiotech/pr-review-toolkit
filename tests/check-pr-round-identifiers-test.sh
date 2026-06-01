@@ -411,8 +411,8 @@ cleanup_fixture_dir
 # conflation with "lint regressed". Switching to a synthetic root
 # would defeat the test by no longer exercising the default-path
 # array against real content. The success-message + empty-stderr
-# assertions together pin both the rc=1 (clean) branch AND the
-# absence of any surface_grep_stderr surfacing, so a regression
+# assertions together pin both the rc=0 (clean) branch AND the
+# absence of any stderr surfacing from the script, so a regression
 # that scans nothing or emits unexpected diagnostics will still
 # fail loudly.
 
