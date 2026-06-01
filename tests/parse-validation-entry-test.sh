@@ -92,7 +92,7 @@ run_script "- none possible: no covering test exists"
 assert_rc "case6 none-possible-with-dash" 0
 assert_stdout_eq "case6 none-possible-with-dash" $'none-possible\nno covering test exists'
 
-# Case 7: em-dash separator rejected (encoding-fragile form pre-R4-S3 contract)
+# Case 7: em-dash separator rejected (the encoding-fragile form must not bypass the ASCII-double-dash contract)
 run_script "pytest — exit 0"   # em-dash, not ASCII --
 assert_rc "case7 em-dash-rejected" 2
 
@@ -114,9 +114,49 @@ assert_rc "case11 garbage" 2
 
 # Case 12: command containing nested `bash -c '...'` with the literal
 # ` -- exit ` only at the end. Bash's greedy regex matches the LAST
-# occurrence of ` -- exit <N>$`, which is the right behavior.
+# occurrence of ` -- exit <N>$`, which is the right behavior for
+# legitimately-quoted commands that DO NOT themselves contain ` -- exit `.
 run_script "bash -c 'echo hello' -- exit 0"
 assert_rc "case12 nested-quoted-cmd" 0
 assert_stdout_eq "case12 nested-quoted-cmd" $'0\nbash -c \'echo hello\''
+
+# Case 13: adversarial laundering — multiple ` -- exit <N>` boundaries.
+#
+# A worker emitting `failing-cmd -- exit 1 -- exit 0` (deliberately or
+# accidentally via copy-paste) would have its real failure silently
+# laundered through the greedy `.*` regex: parser yields cmd=`failing-cmd
+# -- exit 1`, rc=0, which the resolver treats as success. This bypasses
+# the safety net the parser was extracted to enforce.
+#
+# Fix: reject any entry containing the ` -- exit ` substring more than
+# once. Workers with legitimate commands containing ` -- exit ` mid-string
+# must quote them so the parser sees only one boundary.
+run_script "failing-cmd -- exit 1 -- exit 0"
+assert_rc "case13 laundering reject" 2
+
+# Case 14: whitespace-only command — `[ -z "$cmd" ]` doesn't catch this.
+#
+# Verified pre-fix: `parse-validation-entry.sh '   -- exit 0'` returns
+# rc=0 with stdout `0\n   ` (3-space cmd). A worker that strips leading
+# decoration aggressively (or has a copy-paste bug) could submit this
+# and be honored as success with a meaningless cmd label.
+run_script "   -- exit 0"
+assert_rc "case14 whitespace-only cmd" 2
+
+# Case 15: whitespace-only reason — `[ -z "$reason" ]` after one-space
+# trim doesn't catch multi-space reasons.
+#
+# Verified pre-fix: `parse-validation-entry.sh 'none possible:    '`
+# returns rc=0 with stdout `none-possible\n   ` (3-space reason after
+# the one-space trim).
+run_script "none possible:    "
+assert_rc "case15 whitespace-only reason" 2
+
+# Case 16: trailing whitespace on form-1 entry — common from markdown
+# editors that add trailing spaces. Should be tolerated (trimmed) rather
+# than rejected, since the trailing whitespace is decoration, not signal.
+run_script "pytest -q -- exit 0   "
+assert_rc "case16 trailing whitespace tolerated" 0
+assert_stdout_eq "case16 trailing whitespace tolerated" $'0\npytest -q'
 
 echo "parse-validation-entry tests passed"

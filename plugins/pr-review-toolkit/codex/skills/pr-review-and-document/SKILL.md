@@ -202,11 +202,32 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
     - `1`: covers two distinct failure modes — disambiguate via the shared helper. The helper does file-existence + jq-rc + stale-flag inspection and prints the right recovery command to stderr:
 
       ```bash
+      set +e
       "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
-      # always exits 1
+      disambig_rc=$?
+      set -e
+
+      case $disambig_rc in
+        1)
+          # Nominal: recovery advice printed to stderr; follow it.
+          exit 1
+          ;;
+        10)
+          # Cannot disambiguate (cache missing or malformed JSON);
+          # the script's stderr names the underlying cause. Surface
+          # the diagnostic to the user and abort — `--sync-from-cache`
+          # would itself fail with no cache to sync from.
+          echo "Cannot disambiguate cache-write-comment.sh exit 1 cause; manual intervention required." >&2
+          exit 10
+          ;;
+        *)
+          echo "disambiguate-stale-source.sh exited unexpectedly (rc=$disambig_rc)" >&2
+          exit "$disambig_rc"
+          ;;
+      esac
       ```
 
-      Unit-tested in `tests/disambiguate-stale-source-test.sh` (5 cases: stale=true, stale=false, field missing, cache absent, invalid JSON).
+      Unit-tested in `tests/disambiguate-stale-source-test.sh` (cases: stale=true, stale=false, field missing, cache absent -> rc=10, invalid JSON -> rc=10, empty arg).
 
     - `2`: local error; abort.
     - `3`: remote is newer. Re-fetch the canonical comment with `${PR_REVIEW_TOOLKIT_ROOT}/scripts/cache-sync.sh "$PR_NUMBER"` (it already does a force-refresh internally), then redo Steps 2-11 against the fresh content.

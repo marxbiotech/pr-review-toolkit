@@ -415,4 +415,45 @@ assert_rc "case15 rename hides non-owned source" 2                # without --no
 assert_stderr_contains "case15 rename hides non-owned source" "secret.txt"
 teardown_repo
 
+# Case 18: GIT_TRACE=1 environment must not contaminate scope-check stderr — load-bearing.
+#
+# Pins the "git stderr-on-success contamination" bug. The script captures
+# git output with `> "$TMP" 2>&1`, but git emits trace lines to stderr under
+# environment switches like GIT_TRACE=1 / GIT_TRACE_PERFORMANCE / advice.*
+# even on successful invocations. Merging stderr into the path-stream file
+# makes the path-reader parse trace lines AS paths, producing a diagnostic
+# full of "Unexpected files: <git internal traces>". Fail-CLOSED (no scope
+# bypass — the traces can't match OWNED), but the diagnostic becomes
+# unreadable for developers debugging under common debug envs.
+#
+# This is the same silent-misdiagnosis class that the jq stderr-separation
+# fix closed in extract-content-hash.sh and disambiguate-stale-source.sh.
+# Pinned here so a future "2>&1 is simpler" reversion fails CI.
+
+setup_repo
+echo modified >> .gitkeep                  # one tracked modification
+# Wrap with explicit GIT_TRACE=1 env var. Run via env to isolate from
+# whatever the test runner's parent shell has set.
+run_script_under_trace() {
+  local stderr_file
+  stderr_file=$(mktemp)
+  set +e
+  STDOUT=$(env GIT_TRACE=1 "$SCRIPT" "$@" 2>"$stderr_file")
+  RC=$?
+  STDERR=$(cat "$stderr_file")
+  set -e
+  rm -f "$stderr_file"
+}
+run_script_under_trace ".gitkeep"          # OWNED is exactly the modified file
+# Modification is in OWNED so the scope check should exit 0 with NO stderr.
+assert_rc "case18 GIT_TRACE clean run" 0
+# The stderr must not contain any "trace:" lines from git's internal logging.
+if [[ "$STDERR" == *"trace:"* ]]; then
+  echo "FAIL [case18 GIT_TRACE clean run]: git trace lines contaminated stderr" >&2
+  echo "  stderr was: $STDERR" >&2
+  teardown_repo
+  exit 1
+fi
+teardown_repo
+
 echo "check-fix-worker-scope tests passed"

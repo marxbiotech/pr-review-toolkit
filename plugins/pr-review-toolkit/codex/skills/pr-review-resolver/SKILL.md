@@ -127,7 +127,14 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
      ```
    - Mark the item as `⏭️ Deferred` or `⏭️ N/A` in the planned comment update.
 8. After all issues have decisions, collect fix worker results. Parse the worker's `Status:` line (see `codex-fix-worker` Output Contract); do not infer success from the presence of `Files changed:` alone:
-   - `Status: success`: cross-check every `Validation:` entry by passing it to `${PR_REVIEW_TOOLKIT_ROOT}/scripts/parse-validation-entry.sh '<entry>'`. The parser exits `0` for both valid shapes (`<cmd> -- exit <N>` and `none possible: <reason>`) and `2` for any malformed entry; you must also verify that every parsed `<N>` is `0` (the parser's first stdout line). Only mark `✅ Fixed` when both: (a) every entry parses cleanly, AND (b) every `<cmd> -- exit <N>` entry has `<N>=0`. If any entry fails parse or any rc is non-zero, treat the worker output as `partial` regardless of what its `Status:` line says — workers that violate the safety net should not silently bypass the cross-check.
+   - `Status: success`: cross-check every `Validation:` entry by passing it to `${PR_REVIEW_TOOLKIT_ROOT}/scripts/parse-validation-entry.sh '<entry>'`. The parser distinguishes two valid shapes by its first stdout line:
+
+     1. Run the parser; capture its rc. If rc != 0, the entry is malformed — treat the entire worker output as `partial`.
+     2. Read the parser's first stdout line. If it equals the literal `none-possible`, this is a form-2 entry (`none possible: <reason>`) and counts as success-eligible — proceed to the next entry without further check.
+     3. Otherwise interpret the first stdout line as a signed integer rc. If rc == 0, the entry counts as success-eligible. If rc != 0, treat the entire worker output as `partial`.
+     4. Only mark `✅ Fixed` when every entry survives steps 1-3 as success-eligible.
+
+     Workers that violate the safety net (em-dash separator, malformed shape, hidden non-zero exit, whitespace-only cmd, multiple `-- exit` boundaries) are rejected by the parser at step 1; their `Status: success` self-report does not bypass the cross-check.
    - `Status: partial`: report the validation gap in Traditional Chinese and ask the user whether to accept-as-fixed, retry, or defer.
    - `Status: failed`: report the error in Traditional Chinese and ask whether to retry, defer, or mark N/A. Do not mark `✅ Fixed`.
 9. Validate modified file scope via the shared helper. The helper is byte-exact for paths containing spaces, literal newlines, non-ASCII bytes, and forces per-file enumeration of untracked-dir contents (`-uall`) so workers cannot hide files inside a pre-existing untracked dir:
@@ -136,11 +143,15 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    # Defensive guard: if OWNED_FILES is unset (the Session-setup `declare -a`
    # never ran — e.g. the user deferred every issue and step 6 never executed)
    # OR is empty (declared but never appended to), fail loudly with a clear
-   # message. The `${OWNED_FILES[@]+x}` form yields literal "x" when the
-   # array is set and empty when it's unset, so we can test both cases
-   # under `set -u` without an "unbound variable" crash. Bash 3.2 (macOS
-   # default /bin/bash) does NOT save `${#arr[@]:-0}` from set-u-on-unset;
-   # the +x test is the portable form.
+   # message. The `${OWNED_FILES[@]+x}` form survives `set -u` whether the
+   # array is unset, set-empty, or set-non-empty (no "unbound variable"
+   # crash). On bash 3.2 (macOS default /bin/bash) it yields literal "x"
+   # ONLY when the array has at least one element; for both unset AND
+   # set-empty it yields empty — so the first `[ -z ... ]` clause distinguishes
+   # "has elements" from "no elements", and the `|| [ ... -eq 0 ]` clause
+   # is technically redundant on bash 3.2 but kept for cross-version
+   # robustness. The previously-documented `${#arr[@]:-0}` form does NOT
+   # save you from set-u-on-unset; the +x test is the portable form.
    if [ -z "${OWNED_FILES[@]+x}" ] || [ "${#OWNED_FILES[@]}" -eq 0 ]; then
      echo "BUG: OWNED_FILES is unset or empty." >&2
      echo "Session setup in Step 6 must declare OWNED_FILES=() and step 6 must accumulate" >&2
@@ -153,7 +164,7 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    "${PR_REVIEW_TOOLKIT_ROOT}/scripts/check-fix-worker-scope.sh" "${OWNED_FILES[@]}"
    ```
 
-   The helper is unit-tested in `tests/check-fix-worker-scope-test.sh` (12 cases pinning the R3-C1 BSD-awk regression, R4-C1 newline-in-filename, R4-C2 untracked-dir collapse, R3-C4 rename + non-ASCII handling, and the baseline pass/fail cases). See [`scripts/check-fix-worker-scope.sh`](../../../../../scripts/check-fix-worker-scope.sh).
+   The helper is unit-tested in `tests/check-fix-worker-scope-test.sh` (cases pin: BSD-awk paragraph-mode regression, newline-in-filename truncation, untracked-dir collapse, rename + non-ASCII handling, leading-space scope escape, not-a-git-repo silent-success, gitignored scope escape, GIT_TRACE stderr contamination, and the baseline pass/fail cases). See [`scripts/check-fix-worker-scope.sh`](../../../../../scripts/check-fix-worker-scope.sh).
 
    **Rename note:** the helper passes `--no-renames` to git, so `git mv a.txt b.txt` appears as deletion of `a.txt` + addition of `b.txt`. If a worker is expected to perform a rename, its `OWNED_FILES` declaration must include both endpoints.
 
@@ -196,8 +207,16 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
     - `1`: covers two distinct failure modes — disambiguate via the shared helper:
 
       ```bash
+      set +e
       "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
-      # always exits 1
+      disambig_rc=$?
+      set -e
+
+      case $disambig_rc in
+        1)  exit 1 ;;  # Nominal: recovery advice on stderr; follow it.
+        10) echo "Cannot disambiguate cache-write-comment.sh exit 1 cause; manual intervention required." >&2; exit 10 ;;
+        *)  echo "disambiguate-stale-source.sh exited unexpectedly (rc=$disambig_rc)" >&2; exit "$disambig_rc" ;;
+      esac
       ```
 
       Unit-tested in `tests/disambiguate-stale-source-test.sh`.

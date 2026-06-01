@@ -101,17 +101,27 @@ is_expected() {
 # Pinned by test case 14.
 TRACKED_TMP=$(mktemp)
 UNTRACKED_TMP=$(mktemp)
-trap 'rm -f "$TRACKED_TMP" "$UNTRACKED_TMP"' EXIT
+GIT_ERR=$(mktemp)
+trap 'rm -f "$TRACKED_TMP" "$UNTRACKED_TMP" "$GIT_ERR"' EXIT
 
 # Note: do NOT use `if ! cmd; then rc=$?; fi` — $? after `! cmd` holds the
 # NEGATED rc (0 if cmd failed, 1 if it succeeded), not the underlying cmd rc.
 # Use the `cmd || rc=$?` form so the real rc is captured. Same lesson as
 # extract-content-hash.sh:41-43.
+#
+# Capture git's stderr SEPARATELY (not via `> $TMP 2>&1`). Under env switches
+# like GIT_TRACE=1 / GIT_TRACE_PERFORMANCE / GIT_CURL_VERBOSE / advice.*,
+# git emits trace lines to stderr even on successful invocations. Merging
+# stderr into the path-stream file would make the NUL-delimited path-reader
+# parse trace lines AS paths, producing diagnostic output full of git
+# internals. Same lesson as extract-content-hash.sh:82-88 and
+# disambiguate-stale-source.sh:45-50 (the jq stderr-on-success fix).
+# Pinned by test case 18.
 git_rc=0
-git -c core.quotePath=false diff -z --name-only --no-renames HEAD > "$TRACKED_TMP" 2>&1 || git_rc=$?
+git -c core.quotePath=false diff -z --name-only --no-renames HEAD > "$TRACKED_TMP" 2>"$GIT_ERR" || git_rc=$?
 if [ "$git_rc" -ne 0 ]; then
   echo "check-fix-worker-scope: git diff failed (rc=$git_rc); cannot validate scope" >&2
-  cat "$TRACKED_TMP" >&2
+  cat "$GIT_ERR" >&2
   exit "$git_rc"
 fi
 
@@ -128,15 +138,18 @@ done < "$TRACKED_TMP"
 # enumeration: without it, files inside a pre-existing untracked directory
 # collapse to a single `dir/` entry and a worker could hide arbitrary new
 # files inside such a directory and bypass the scope check.
-# Same rc-capture pattern for git status as for git diff above.
+# Same rc-capture + separate-stderr pattern for git status as for git diff above.
 # --ignored=traditional surfaces gitignored files as `!! path` records
 # so a fix-worker cannot escape scope by writing files that match
 # common gitignore patterns (*.log, node_modules/*, .env, secrets/, ...).
+# Truncate $GIT_ERR before the second invocation so its contents are
+# scoped to this command.
+: > "$GIT_ERR"
 git_rc=0
-git -c core.quotePath=false status -z --porcelain -uall --ignored=traditional > "$UNTRACKED_TMP" 2>&1 || git_rc=$?
+git -c core.quotePath=false status -z --porcelain -uall --ignored=traditional > "$UNTRACKED_TMP" 2>"$GIT_ERR" || git_rc=$?
 if [ "$git_rc" -ne 0 ]; then
   echo "check-fix-worker-scope: git status failed (rc=$git_rc); cannot validate scope" >&2
-  cat "$UNTRACKED_TMP" >&2
+  cat "$GIT_ERR" >&2
   exit "$git_rc"
 fi
 

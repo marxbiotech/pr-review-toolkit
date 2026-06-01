@@ -121,4 +121,13 @@ The grammar is unit-tested by `tests/parse-validation-entry-test.sh` (12 cases) 
 
 The resolver treats `partial` as "ask the user" and `failed` as "do not mark fixed".
 
+**Caveat: `partial` is overloaded by design.** After the resolver's cross-check via `parse-validation-entry.sh`, a worker output may be demoted to `partial` for one of two reasons:
+
+1. **Worker self-reported `partial`** — the worker explicitly acknowledged a gap.
+2. **Worker self-reported `success` but failed the cross-check** — the worker emitted a malformed `Validation:` entry, an em-dash separator, a hidden non-zero exit, or a whitespace-only command, and the resolver refused to honor the success claim.
+
+Both manifest identically as `Status: partial` in the resolver's downstream handling. If a future workflow needs to distinguish "trust worker, validation incomplete" from "worker lied, cross-check caught it", add a `partial-cross-check-demoted` flag or split into separate enum values.
+
+**Untested adjacent contract**: the bundle `Agents completed:` parser (in `pr-review-and-document/SKILL.md` step 4) uses an inline awk script that is not extracted to its own script and has no unit-test coverage for the `printed` sentinel + END guard double-print fix. A future regression that drops either of those guards would produce duplicate output that the downstream `sort -u` masks. Extraction to `scripts/parse-agents-completed.sh` with fixture tests is the next prose-to-script extraction target.
+
 The resolver, dev agent, or human is responsible for committing and pushing. Do not start another review pass before the code changes are committed or intentionally left uncommitted by the dev agent.

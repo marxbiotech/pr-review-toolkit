@@ -192,8 +192,16 @@ Before running the workflow, verify these helper scripts are executable and `scr
     - `1`: covers two distinct failure modes — disambiguate via the shared helper:
 
       ```bash
+      set +e
       "${PR_REVIEW_TOOLKIT_ROOT}/scripts/disambiguate-stale-source.sh" "$PR_NUMBER"
-      # always exits 1
+      disambig_rc=$?
+      set -e
+
+      case $disambig_rc in
+        1)  exit 1 ;;  # Nominal: recovery advice on stderr; follow it.
+        10) echo "Cannot disambiguate cache-write-comment.sh exit 1 cause; manual intervention required." >&2; exit 10 ;;
+        *)  echo "disambiguate-stale-source.sh exited unexpectedly (rc=$disambig_rc)" >&2; exit "$disambig_rc" ;;
+      esac
       ```
 
       Unit-tested in `tests/disambiguate-stale-source-test.sh`.

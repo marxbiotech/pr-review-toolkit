@@ -513,6 +513,45 @@ jobs:
           fi
           echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"
 
+      - name: Reject PR-round identifiers in source
+        # PR-round identifiers in the form "R<round>-<class><number>" (e.g.
+        # round R, critical/important/suggestion class C/I/S, then ordinal)
+        # are meaningful only inside the PR review thread that introduced
+        # them; once the PR is merged and squashed, no future maintainer
+        # will know what they refer to. Manual cleanup cycles have shown
+        # that audits reliably miss sibling sites across multiple rounds.
+        #
+        # This lint is the structural escape valve for that micro-pattern:
+        # reject any new occurrence of `R<digits>-<C|I|S><digits>` in any
+        # source file under scripts/, tests/, plugins/, docs/, .github/.
+        #
+        # Acceptable forms: stable bug-class descriptions (e.g. "newline-in-
+        # filename truncation bug", "silent-misdiagnosis bug family") that
+        # don't require the reader to look up the original PR thread.
+        #
+        # Excluded paths: the .pr-review-cache/ directory is gitignored so
+        # PR comment content (which legitimately contains R-numbers) never
+        # reaches CI. README.md is excluded only for change-log style entries
+        # that historically reference PR-round identifiers; new entries
+        # should still avoid them.
+        run: |
+          set -euo pipefail
+          # Scope to source trees that should NEVER contain PR-round
+          # identifiers in committed files. Excludes README.md (historical
+          # use in change-log sections is acceptable for now).
+          fail=0
+          # Use POSIX BRE for portability; the [^a-zA-Z] negative-context
+          # boundaries prevent matching things like "MR3-C1" (commercial
+          # part numbers) or "R5-S4abc" (longer identifiers).
+          if grep -rEn '(^|[^a-zA-Z])R[0-9]+-[CIS][0-9]+([^a-zA-Z0-9]|$)' \
+                scripts/ tests/ plugins/ docs/ .github/workflows/ 2>/dev/null; then
+            echo "::error::PR-round identifiers (R<n>-C/I/S<n>) found in source files."
+            echo "::error::These references rot after PR merge — replace with stable bug-class names"
+            echo "::error::(e.g. 'newline-truncation bug', 'silent-misdiagnosis bug family')."
+            exit 1
+          fi
+          echo "✅ No PR-round identifiers (R<n>-C/I/S<n>) in source files"
+
       - name: Run shell test suites
         run: |
           set -euo pipefail

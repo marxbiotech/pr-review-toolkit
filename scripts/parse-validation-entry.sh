@@ -41,6 +41,16 @@ if [ -z "$ENTRY" ]; then
   exit 2
 fi
 
+# Tolerate trailing whitespace (common from markdown editors that strip
+# nothing on save). Leading whitespace is preserved because indentation
+# inside a list-item continuation may be semantically meaningful.
+ENTRY="${ENTRY%"${ENTRY##*[![:space:]]}"}"
+
+if [ -z "$ENTRY" ]; then
+  echo "Error: validation entry is whitespace-only" >&2
+  exit 2
+fi
+
 # Form 2: `- none possible: <reason>` (with or without leading `- `).
 # Strip leading `- ` if present.
 case "$ENTRY" in
@@ -53,10 +63,16 @@ case "$stripped" in
     reason="${stripped#none possible:}"
     # Trim one leading space if present.
     reason="${reason# }"
-    if [ -z "$reason" ]; then
-      echo "Error: 'none possible:' requires a non-empty reason" >&2
-      exit 2
-    fi
+    # Reject whitespace-only reasons (e.g. `none possible:    `). The
+    # `[ -z ]` check alone passes anything non-empty; we need to verify
+    # there's at least one non-whitespace byte in the reason.
+    case "$reason" in
+      *[![:space:]]*) ;;
+      *)
+        echo "Error: 'none possible:' requires a non-whitespace reason" >&2
+        exit 2
+        ;;
+    esac
     printf 'none-possible\n%s\n' "$reason"
     exit 0
     ;;
@@ -64,14 +80,42 @@ esac
 
 # Form 1: `<command> -- exit <N>` (regex: cmd, then literal ` -- exit `,
 # then signed integer).
-# Use bash regex to extract cmd and N.
+#
+# Reject adversarial laundering — `failing-cmd -- exit 1 -- exit 0`
+# would, under the greedy `.*` regex, parse as cmd=`failing-cmd -- exit
+# 1` with rc=0, silently laundering the worker's failure through the
+# safety net the parser was extracted to enforce. Count occurrences
+# of ` -- exit ` first; reject if more than one. Workers with
+# legitimate commands containing ` -- exit ` mid-string must quote
+# them so only one boundary survives at the entry's tail.
+boundary_count=$(printf '%s' "$stripped" | awk -v p=' -- exit ' '
+  BEGIN { count = 0; pos = 1 }
+  {
+    while ((found = index(substr($0, pos), p)) > 0) {
+      count++
+      pos = pos + found + length(p) - 1
+    }
+    print count
+  }
+')
+if [ "$boundary_count" -gt 1 ]; then
+  echo "Error: validation entry contains multiple ' -- exit ' boundaries (got ${boundary_count})" >&2
+  echo "       quote commands that legitimately contain ' -- exit ' so only the tail boundary survives" >&2
+  exit 2
+fi
+
 if [[ "$stripped" =~ ^(.*)\ --\ exit\ (-?[0-9]+)$ ]]; then
   cmd="${BASH_REMATCH[1]}"
   rc="${BASH_REMATCH[2]}"
-  if [ -z "$cmd" ]; then
-    echo "Error: empty command before ' -- exit <N>'" >&2
-    exit 2
-  fi
+  # Reject empty AND whitespace-only commands. `[ -z "$cmd" ]` alone
+  # passes a cmd like `   ` (three spaces) which is meaningless.
+  case "$cmd" in
+    *[![:space:]]*) ;;
+    *)
+      echo "Error: command before ' -- exit <N>' is empty or whitespace-only" >&2
+      exit 2
+      ;;
+  esac
   printf '%s\n%s\n' "$rc" "$cmd"
   exit 0
 fi

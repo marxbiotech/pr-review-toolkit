@@ -56,8 +56,23 @@ attempt_recovery() {
     echo "Manual intervention required." >&2
     exit 1
   fi
+  # Apply the same stderr-separation pattern as the main flow (line ~82):
+  # `2>/dev/null` would swallow jq's diagnostic on a truncated/malformed
+  # cache produced by a partial-network sync, making the "did not produce
+  # a valid content_hash" message misleading (says "hash missing" when
+  # the real problem is "JSON parse error"). Capture stderr explicitly.
   local recovered
-  recovered=$(jq -r '.content_hash // ""' "$CACHE_FILE" 2>/dev/null || echo "")
+  local recovered_err
+  recovered_err=$(mktemp)
+  local recovered_rc=0
+  recovered=$(jq -r '.content_hash // ""' "$CACHE_FILE" 2>"$recovered_err") || recovered_rc=$?
+  if [ "$recovered_rc" -ne 0 ]; then
+    echo "Recovery cache exists but jq failed reading ${CACHE_FILE}: $(cat "$recovered_err")" >&2
+    echo "Manual intervention required." >&2
+    rm -f "$recovered_err"
+    exit 1
+  fi
+  rm -f "$recovered_err"
   if ! [[ "$recovered" =~ ^sha256:[0-9a-f]{64}$ ]]; then
     echo "Recovery did not produce a valid content_hash; got '${recovered}'." >&2
     echo "Manual intervention required." >&2
@@ -77,8 +92,9 @@ fi
 # stderr on success (e.g. deprecation notes) doesn't contaminate $HASH with
 # warning text. The earlier `2>&1` form would have routed any stderr-on-
 # success into $HASH, breaking the sha256 regex below and triggering an
-# unnecessary recovery — the same silent-misdiagnosis bug class that R3-C2
-# fixed at a different site.
+# unnecessary recovery — the same silent-misdiagnosis bug class that the
+# disambiguate-stale-source.sh stderr-separation pattern closes at the
+# cache-write inspection site.
 JQ_ERR=$(mktemp)
 trap 'rm -f "$JQ_ERR"' EXIT
 
