@@ -45,18 +45,31 @@
 #   11. Script self-exclusion pin: a fixture file
 #       named check-pr-round-identifiers.sh that
 #       contains a literal R-number string must NOT
-#       cause the lint to fail -> rc=0 (the
-#       --exclude=check-pr-round-identifiers.sh
-#       flag is load-bearing; reverting it would
-#       make the lint self-fail on its own
-#       definition file because the script header
-#       carries R-number example identifiers).
+#       cause the lint to fail -> rc=0 + success
+#       message (the --exclude=check-pr-round-
+#       identifiers.sh flag is load-bearing;
+#       reverting it would make the lint self-fail
+#       on its own definition file because the
+#       script header carries R-number example
+#       identifiers).
 #   12. Test self-exclusion pin: same as case 11
 #       but for the test filename — a fixture file
 #       named check-pr-round-identifiers-test.sh
 #       must be skipped via the matching --exclude
-#       flag, since the test file carries 30+
-#       literal R-numbers as fixtures and rationale.
+#       flag -> rc=0 + success message (the test
+#       file carries 30+ literal R-numbers as
+#       fixtures and rationale).
+#   13. Default-args invocation at repo root: the
+#       actual CI invocation runs with NO positional
+#       args, scanning the script's hard-coded
+#       default-path array. All other cases pass an
+#       explicit fixture dir; only this case
+#       exercises the end-to-end CI contract -> rc=0
+#       + success message. Pins against the rename-
+#       induced silent-breakage scenario where one
+#       byte-equal script copy is renamed and the
+#       basename-match --exclude= silently fails to
+#       protect it.
 #
 # Each case runs against a fixture dir or PATH-injected helper. No git
 # repo is required (the script does not invoke git).
@@ -304,23 +317,27 @@ cleanup_fixture_dir
 #
 # The lint passes --exclude=check-pr-round-identifiers.sh so its own
 # header comments — which contain literal R-number example strings
-# (R7-C1, MR3-C1, R5-S4abc) used to document the regex's boundaries —
-# do not cause the lint to self-fail on CI. That --exclude flag is
-# load-bearing; removing it would break every CI run on this repo,
-# but no prior test exercised it. Pin by basename: any file with the
-# basename check-pr-round-identifiers.sh containing an R-number
-# string must be skipped, regardless of where it lives in the scan
-# tree. Reverting line 76 (--exclude=check-pr-round-identifiers.sh)
-# makes this case fail with the planted "R7-C1" echoed.
+# (e.g. R7-C1) used to document the regex — do not cause the lint to
+# self-fail on CI. That --exclude flag is load-bearing; removing it
+# would break every CI run on this repo, but no prior test exercised
+# it. Pin by basename: any file with the basename
+# check-pr-round-identifiers.sh containing an R-number string must be
+# skipped, regardless of where it lives in the scan tree. Reverting
+# line 76 (--exclude=check-pr-round-identifiers.sh) makes this case
+# fail with the planted "R7-C1" echoed.
+#
+# R10-I1 vacuous-success guard: also assert the success-message
+# string. Without it, a regression that silently scanned zero files
+# (e.g. the path-array logic dropping user-supplied args) would let
+# this case pass with rc=0 + empty stdout — false-clean.
 
 make_fixture_dir
 mkdir -p "$FIXTURE_DIR/scripts"
-# Filename must match the basename the --exclude flag guards. Content
-# carries a literal R-number that the regex would otherwise match.
 echo "# header references R7-C1 as a regex example" \
   > "$FIXTURE_DIR/scripts/check-pr-round-identifiers.sh"
 run_script "$FIXTURE_DIR/scripts"
 assert_rc "case11 script self-exclusion holds" 0
+assert_stdout_contains "case11 success message" "No PR-round identifiers"
 cleanup_fixture_dir
 
 # Case 12: test-file self-exclusion pin (R9-C1 part 2).
@@ -340,6 +357,33 @@ echo "# coverage map says case4 lowercase r7-c1" \
   > "$FIXTURE_DIR/tests/check-pr-round-identifiers-test.sh"
 run_script "$FIXTURE_DIR/tests"
 assert_rc "case12 test self-exclusion holds" 0
+assert_stdout_contains "case12 success message" "No PR-round identifiers"
 cleanup_fixture_dir
+
+# Case 13: default-args invocation at repo root (R10-I2).
+#
+# All cases above pass an explicit fixture-dir positional argument.
+# The actual CI invocation (per .github/workflows/validate.yml) runs
+# the lint with NO positional args at repo root, scanning the
+# script's hard-coded default-path array. The two byte-equal script
+# copies (scripts/ and plugins/pr-review-toolkit/scripts/) are
+# protected by basename-match --exclude= flags; if anyone ever
+# renamed one copy to disambiguate, the basename-match self-
+# exclusion would silently break and the regression would only
+# surface at CI run time, not in any local test.
+#
+# This case pins the end-to-end CI contract by invoking the script
+# with no args from ROOT_DIR. The cd happens inside the $(...)
+# subshell so it does not leak to subsequent test code.
+
+stderr_file=$(mktemp)
+set +e
+STDOUT=$(cd "$ROOT_DIR" && "$SCRIPT" 2>"$stderr_file")
+RC=$?
+STDERR=$(cat "$stderr_file")
+set -e
+rm -f "$stderr_file"
+assert_rc "case13 default-args at repo root rc" 0
+assert_stdout_contains "case13 default-args success message" "No PR-round identifiers"
 
 echo "check-pr-round-identifiers tests passed"
