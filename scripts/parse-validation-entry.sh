@@ -88,15 +88,28 @@ esac
 # of ` -- exit ` first; reject if more than one. Workers with
 # legitimate commands containing ` -- exit ` mid-string must quote
 # them so only one boundary survives at the entry's tail.
+# Count boundaries across the ENTIRE input (including any embedded
+# newlines), not per-record. A previous form had `print count` inside
+# the main `{ }` block, so a multi-line entry produced one count per
+# line (e.g. "1\n1") instead of a single integer. The downstream
+# `[ ... -gt 1 ]` arithmetic test then crashed with `integer expression
+# expected`, but because it lived inside an `if` condition `set -e` did
+# NOT abort — control fell through to the form-1 regex, which greedily
+# matched the final ` -- exit <N>$` and laundered the worker's earlier
+# failure into rc=0. `END { print count }` ensures the count is exactly
+# one integer regardless of how many lines the input spans, so the
+# `-gt 1` check correctly rejects multi-line laundering as well as the
+# single-line `a -- exit 1 -- exit 0` shape.
 boundary_count=$(printf '%s' "$stripped" | awk -v p=' -- exit ' '
-  BEGIN { count = 0; pos = 1 }
+  BEGIN { count = 0 }
   {
+    pos = 1
     while ((found = index(substr($0, pos), p)) > 0) {
       count++
       pos = pos + found + length(p) - 1
     }
-    print count
   }
+  END { print count }
 ')
 if [ "$boundary_count" -gt 1 ]; then
   echo "Error: validation entry contains multiple ' -- exit ' boundaries (got ${boundary_count})" >&2

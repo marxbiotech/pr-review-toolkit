@@ -159,4 +159,37 @@ run_script "pytest -q -- exit 0   "
 assert_rc "case16 trailing whitespace tolerated" 0
 assert_stdout_eq "case16 trailing whitespace tolerated" $'0\npytest -q'
 
+# Case 17: adversarial laundering across a newline boundary.
+#
+# A multi-line entry containing two ` -- exit ` boundaries (one per line)
+# was, pre-fix, silently honored as `rc=0` with `cmd` spanning the newline
+# because the awk `print count` statement lived inside the per-record
+# block rather than `END`. boundary_count became "1\n1" (two lines of
+# output), the `[ ... -gt 1 ]` arithmetic test crashed with `integer
+# expression expected`, and `set -e` did NOT abort because the failure
+# happened inside an `if` condition. Control fell through to the form-1
+# regex which (greedily) matched the last ` -- exit 0$` and emitted rc=0.
+# Net effect: a worker that emitted a real failure on line 1 and a
+# placebo success on line 2 had its failure laundered into rc=0.
+#
+# Fix: move awk's `print count` into the `END { ... }` block so the
+# boundary count is a single integer regardless of input line count.
+# The boundary-count > 1 check then correctly rejects the laundering.
+run_script "$(printf 'first -- exit 1\nsecond -- exit 0')"
+assert_rc "case17 multi-line laundering reject" 2
+if ! printf '%s' "$STDERR" | grep -q 'multiple'; then
+  echo "FAIL [case17 multi-line laundering reject]: stderr should name 'multiple boundaries'" >&2
+  echo "  stderr: $STDERR" >&2
+  exit 1
+fi
+
+# Case 18: hypothetical-revert guard for case 17. A single-line single-
+# boundary entry must continue to parse correctly after the awk END-
+# placement fix — i.e. the fix must not regress the canonical happy path.
+# Reverting the fix (moving `print count` back into the main block)
+# leaves this case passing but breaks case 17, which is the test pin.
+run_script "pytest -q -- exit 0"
+assert_rc "case18 post-fix single-line still works" 0
+assert_stdout_eq "case18 post-fix single-line still works" $'0\npytest -q'
+
 echo "parse-validation-entry tests passed"

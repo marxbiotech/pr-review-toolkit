@@ -522,35 +522,69 @@ jobs:
         # that audits reliably miss sibling sites across multiple rounds.
         #
         # This lint is the structural escape valve for that micro-pattern:
-        # reject any new occurrence of `R<digits>-<C|I|S><digits>` in any
-        # source file under scripts/, tests/, plugins/, docs/, .github/.
+        # reject any new occurrence of `R<digits>-<class><digits>` in any
+        # committed source path. Acceptable forms: stable bug-class
+        # descriptions (e.g. "newline-in-filename truncation bug",
+        # "silent-misdiagnosis bug family") that don't require the reader
+        # to look up the original PR thread.
         #
-        # Acceptable forms: stable bug-class descriptions (e.g. "newline-in-
-        # filename truncation bug", "silent-misdiagnosis bug family") that
-        # don't require the reader to look up the original PR thread.
-        #
-        # Excluded paths: the .pr-review-cache/ directory is gitignored so
-        # PR comment content (which legitimately contains R-numbers) never
-        # reaches CI. README.md is excluded only for change-log style entries
-        # that historically reference PR-round identifiers; new entries
-        # should still avoid them.
+        # Excluded paths: README.md (historical change-log entries
+        # reference R-numbers — new entries should still avoid them) and
+        # the .pr-review-cache/ directory (gitignored, but excluded for
+        # defense in depth so the lint stays robust if a cache file
+        # accidentally gets staged).
         run: |
           set -euo pipefail
-          # Scope to source trees that should NEVER contain PR-round
-          # identifiers in committed files. Excludes README.md (historical
-          # use in change-log sections is acceptable for now).
-          fail=0
-          # Use POSIX BRE for portability; the [^a-zA-Z] negative-context
-          # boundaries prevent matching things like "MR3-C1" (commercial
-          # part numbers) or "R5-S4abc" (longer identifiers).
-          if grep -rEn '(^|[^a-zA-Z])R[0-9]+-[CIS][0-9]+([^a-zA-Z0-9]|$)' \
-                scripts/ tests/ plugins/ docs/ .github/workflows/ 2>/dev/null; then
-            echo "::error::PR-round identifiers (R<n>-C/I/S<n>) found in source files."
-            echo "::error::These references rot after PR merge — replace with stable bug-class names"
-            echo "::error::(e.g. 'newline-truncation bug', 'silent-misdiagnosis bug family')."
-            exit 1
-          fi
-          echo "✅ No PR-round identifiers (R<n>-C/I/S<n>) in source files"
+          # Scope: every committed source path. Listed explicitly rather
+          # than `.` to keep generated/vendored content (e.g. node_modules
+          # if introduced) outside the scan.
+          #
+          # Regex notes:
+          #   - `(^|[^a-zA-Z])` / `([^a-zA-Z0-9]|$)` boundaries prevent
+          #     matching "MR3-C1" (commercial part numbers) or "R5-S4abc"
+          #     (longer identifiers).
+          #   - Class character set is `[A-Z]` (not `[CIS]`) so future
+          #     round classifications (e.g. blocker, question) are caught
+          #     without re-touching this lint.
+          #   - `-i` catches lowercase variants like the one shown in
+          #     comments / chat transcripts.
+          #
+          # Stderr handling: the previous form used `grep ... 2>/dev/null`
+          # which collapsed "no matches" with "scan target missing" and
+          # "grep crashed". Capture stderr to a temp file and branch on
+          # grep's exit code: 0 = found (fail loudly), 1 = clean,
+          # anything else = grep itself failed (surface its stderr and
+          # exit with grep's rc rather than masking the failure as
+          # "clean").
+          grep_err=$(mktemp)
+          trap 'rm -f "$grep_err"' EXIT
+          set +e
+          grep_out=$(grep -riEn \
+            --exclude=README.md \
+            --exclude-dir=.pr-review-cache \
+            '(^|[^a-zA-Z])R[0-9]+-[A-Z][0-9]+([^a-zA-Z0-9]|$)' \
+            scripts/ tests/ plugins/ docs/ .github/ skills/ commands/ \
+            .agents/ .claude-plugin/ \
+            AGENTS.md CHANGELOG.md CLAUDE.md RELEASING.md 2>"$grep_err")
+          grep_rc=$?
+          set -e
+          case "$grep_rc" in
+            0)
+              echo "::error::PR-round identifiers found in source files:"
+              printf '%s\n' "$grep_out"
+              echo "::error::These references rot after PR merge — replace with stable bug-class names"
+              echo "::error::(e.g. 'newline-truncation bug', 'silent-misdiagnosis bug family')."
+              exit 1
+              ;;
+            1)
+              echo "✅ No PR-round identifiers in source files"
+              ;;
+            *)
+              echo "::error::grep failed (rc=$grep_rc) while scanning for PR-round identifiers:"
+              cat "$grep_err" >&2
+              exit "$grep_rc"
+              ;;
+          esac
 
       - name: Run shell test suites
         run: |

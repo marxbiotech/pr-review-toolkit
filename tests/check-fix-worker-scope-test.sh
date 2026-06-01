@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tests for scripts/check-fix-worker-scope.sh
 #
-# The scope-check script is the structural escape valve for the R1-R4
+# The scope-check script is the structural escape valve for the
 # recurring fix-introduces-regression pattern in pr-review-resolver step 9.
 # Each test case pins a specific class of bug the previous prose form
 # had, so that future "let's simplify the pipeline" attempts will fail
