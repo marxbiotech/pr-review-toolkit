@@ -42,6 +42,21 @@
 #                                                    0. Pre-R8-I1 form swallowed
 #                                                    the stderr on the match-
 #                                                    found branch.
+#   11. Script self-exclusion pin: a fixture file
+#       named check-pr-round-identifiers.sh that
+#       contains a literal R-number string must NOT
+#       cause the lint to fail -> rc=0 (the
+#       --exclude=check-pr-round-identifiers.sh
+#       flag is load-bearing; reverting it would
+#       make the lint self-fail on its own
+#       definition file because the script header
+#       carries R-number example identifiers).
+#   12. Test self-exclusion pin: same as case 11
+#       but for the test filename — a fixture file
+#       named check-pr-round-identifiers-test.sh
+#       must be skipped via the matching --exclude
+#       flag, since the test file carries 30+
+#       literal R-numbers as fixtures and rationale.
 #
 # Each case runs against a fixture dir or PATH-injected helper. No git
 # repo is required (the script does not invoke git).
@@ -283,6 +298,48 @@ run_script_with_path "$FAKE_GREP_DIR" "$FIXTURE_DIR"
 assert_rc "case10 R8-I1 match+stderr rc" 1
 assert_stderr_contains "case10 R8-I1 stderr surfaced" "fake-grep: warning: simulated unreadable sibling"
 rm -rf "$FAKE_GREP_DIR"
+cleanup_fixture_dir
+
+# Case 11: script self-exclusion pin (R9-C1 part 1).
+#
+# The lint passes --exclude=check-pr-round-identifiers.sh so its own
+# header comments — which contain literal R-number example strings
+# (R7-C1, MR3-C1, R5-S4abc) used to document the regex's boundaries —
+# do not cause the lint to self-fail on CI. That --exclude flag is
+# load-bearing; removing it would break every CI run on this repo,
+# but no prior test exercised it. Pin by basename: any file with the
+# basename check-pr-round-identifiers.sh containing an R-number
+# string must be skipped, regardless of where it lives in the scan
+# tree. Reverting line 76 (--exclude=check-pr-round-identifiers.sh)
+# makes this case fail with the planted "R7-C1" echoed.
+
+make_fixture_dir
+mkdir -p "$FIXTURE_DIR/scripts"
+# Filename must match the basename the --exclude flag guards. Content
+# carries a literal R-number that the regex would otherwise match.
+echo "# header references R7-C1 as a regex example" \
+  > "$FIXTURE_DIR/scripts/check-pr-round-identifiers.sh"
+run_script "$FIXTURE_DIR/scripts"
+assert_rc "case11 script self-exclusion holds" 0
+cleanup_fixture_dir
+
+# Case 12: test-file self-exclusion pin (R9-C1 part 2).
+#
+# Symmetric to case 11: the lint passes
+# --exclude=check-pr-round-identifiers-test.sh so the test file's
+# own fixture content (30+ literal R-numbers in headers, assertion
+# labels, and fixture body strings) does not cause the lint to
+# self-fail. Reverting line 77 (--exclude=...-test.sh) makes this
+# case fail with the planted "r7-c1" echoed. Each --exclude flag
+# is pinned independently so the two cases fail in isolation, which
+# tells a future maintainer exactly which flag they regressed.
+
+make_fixture_dir
+mkdir -p "$FIXTURE_DIR/tests"
+echo "# coverage map says case4 lowercase r7-c1" \
+  > "$FIXTURE_DIR/tests/check-pr-round-identifiers-test.sh"
+run_script "$FIXTURE_DIR/tests"
+assert_rc "case12 test self-exclusion holds" 0
 cleanup_fixture_dir
 
 echo "check-pr-round-identifiers tests passed"
