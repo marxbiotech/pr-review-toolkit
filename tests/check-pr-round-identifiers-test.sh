@@ -116,6 +116,24 @@ run_script_with_path() {
   rm -f "$stderr_file"
 }
 
+run_script_in_dir() {
+  # Same as run_script but with cwd changed to a specified directory.
+  # The cd happens inside the $(...) subshell so it does not leak to
+  # subsequent test code. Used by the default-args case to exercise
+  # the script's hard-coded default-path array, which is relative-
+  # path-based and only resolves correctly when cwd = repo root.
+  local dir="$1"
+  shift
+  local stderr_file
+  stderr_file=$(mktemp)
+  set +e
+  STDOUT=$(cd "$dir" && "$SCRIPT" "$@" 2>"$stderr_file")
+  RC=$?
+  STDERR=$(cat "$stderr_file")
+  set -e
+  rm -f "$stderr_file"
+}
+
 assert_rc() {
   local label="$1"
   local expected="$2"
@@ -155,6 +173,15 @@ assert_stderr_contains() {
   if [[ "$STDERR" != *"$needle"* ]]; then
     echo "FAIL [$label]: stderr missing expected substring" >&2
     echo "  expected substring: $needle" >&2
+    echo "  actual stderr: $STDERR" >&2
+    exit 1
+  fi
+}
+
+assert_stderr_empty() {
+  local label="$1"
+  if [ -n "$STDERR" ]; then
+    echo "FAIL [$label]: expected empty stderr, got non-empty content" >&2
     echo "  actual stderr: $STDERR" >&2
     exit 1
   fi
@@ -313,7 +340,7 @@ assert_stderr_contains "case10 R8-I1 stderr surfaced" "fake-grep: warning: simul
 rm -rf "$FAKE_GREP_DIR"
 cleanup_fixture_dir
 
-# Case 11: script self-exclusion pin (R9-C1 part 1).
+# Case 11: script self-exclusion pin.
 #
 # The lint passes --exclude=check-pr-round-identifiers.sh so its own
 # header comments — which contain literal R-number example strings
@@ -323,13 +350,12 @@ cleanup_fixture_dir
 # it. Pin by basename: any file with the basename
 # check-pr-round-identifiers.sh containing an R-number string must be
 # skipped, regardless of where it lives in the scan tree. Reverting
-# line 76 (--exclude=check-pr-round-identifiers.sh) makes this case
-# fail with the planted "R7-C1" echoed.
-#
-# R10-I1 vacuous-success guard: also assert the success-message
-# string. Without it, a regression that silently scanned zero files
-# (e.g. the path-array logic dropping user-supplied args) would let
-# this case pass with rc=0 + empty stdout — false-clean.
+# the --exclude=check-pr-round-identifiers.sh flag makes this case
+# fail with the planted "R7-C1" echoed. The success-message assertion
+# also guards against vacuous success: a regression that silently
+# scanned zero files (e.g. the path-array logic dropping user-
+# supplied args) would otherwise let this case pass with rc=0 +
+# empty stdout — false-clean.
 
 make_fixture_dir
 mkdir -p "$FIXTURE_DIR/scripts"
@@ -340,16 +366,17 @@ assert_rc "case11 script self-exclusion holds" 0
 assert_stdout_contains "case11 success message" "No PR-round identifiers"
 cleanup_fixture_dir
 
-# Case 12: test-file self-exclusion pin (R9-C1 part 2).
+# Case 12: test-file self-exclusion pin.
 #
 # Symmetric to case 11: the lint passes
 # --exclude=check-pr-round-identifiers-test.sh so the test file's
-# own fixture content (30+ literal R-numbers in headers, assertion
+# own fixture content (literal R-numbers in headers, assertion
 # labels, and fixture body strings) does not cause the lint to
-# self-fail. Reverting line 77 (--exclude=...-test.sh) makes this
-# case fail with the planted "r7-c1" echoed. Each --exclude flag
-# is pinned independently so the two cases fail in isolation, which
-# tells a future maintainer exactly which flag they regressed.
+# self-fail. Reverting the --exclude=check-pr-round-identifiers-
+# test.sh flag makes this case fail with the planted "r7-c1"
+# echoed. Each --exclude flag is pinned independently so the two
+# cases fail in isolation, which tells a future maintainer exactly
+# which flag they regressed.
 
 make_fixture_dir
 mkdir -p "$FIXTURE_DIR/tests"
@@ -360,7 +387,7 @@ assert_rc "case12 test self-exclusion holds" 0
 assert_stdout_contains "case12 success message" "No PR-round identifiers"
 cleanup_fixture_dir
 
-# Case 13: default-args invocation at repo root (R10-I2).
+# Case 13: default-args invocation at repo root.
 #
 # All cases above pass an explicit fixture-dir positional argument.
 # The actual CI invocation (per .github/workflows/validate.yml) runs
@@ -373,17 +400,25 @@ cleanup_fixture_dir
 # surface at CI run time, not in any local test.
 #
 # This case pins the end-to-end CI contract by invoking the script
-# with no args from ROOT_DIR. The cd happens inside the $(...)
-# subshell so it does not leak to subsequent test code.
+# with no args from ROOT_DIR via the run_script_in_dir helper.
+#
+# Design Decision: case 13 deliberately runs against the live
+# working tree (ROOT_DIR) rather than a synthetic fixture root.
+# Coupling case 13 to the live tree is intentional — its purpose
+# is to verify the same default-path invocation CI uses. If an
+# accidental PR-round identifier ever lands in committed source,
+# case 13 SHOULD fail locally; that is the correct signal, not a
+# conflation with "lint regressed". Switching to a synthetic root
+# would defeat the test by no longer exercising the default-path
+# array against real content. The success-message + empty-stderr
+# assertions together pin both the rc=1 (clean) branch AND the
+# absence of any surface_grep_stderr surfacing, so a regression
+# that scans nothing or emits unexpected diagnostics will still
+# fail loudly.
 
-stderr_file=$(mktemp)
-set +e
-STDOUT=$(cd "$ROOT_DIR" && "$SCRIPT" 2>"$stderr_file")
-RC=$?
-STDERR=$(cat "$stderr_file")
-set -e
-rm -f "$stderr_file"
+run_script_in_dir "$ROOT_DIR"
 assert_rc "case13 default-args at repo root rc" 0
 assert_stdout_contains "case13 default-args success message" "No PR-round identifiers"
+assert_stderr_empty "case13 default-args clean stderr"
 
 echo "check-pr-round-identifiers tests passed"
