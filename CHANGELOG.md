@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.0.0-rc.1] - 2026-06-01
+
+Release candidate for v3.0.0. The Codex side of the toolkit reaches feature parity with the Claude side: parallel review producer, canonical comment writer, Gemini integrator, interactive resolver, and resolver-managed bounded fix worker.
+
+### Added
+
+- `codex-review-pass` skill: launches parallel read-only review subagents and returns a deduplicated finding bundle in bootstrap and append modes
+- `pr-review-and-document` Codex skill: publishes the bundle through the shared `.pr-review-cache/pr-#.json` contract
+- `gemini-review-integrator` Codex skill: merges Gemini Code Assist comments into the canonical PR review comment
+- `pr-review-resolver` Codex skill: discusses unresolved findings one by one, coordinates user decisions, and owns review-state updates
+- `codex-fix-worker` Codex skill: resolver-managed, bounded per-issue fix executor — explicitly forbidden from touching review state
+- Structural CI lint that rejects PR-round identifiers (`R1`, `round-2`, etc.) leaking into source/skill files, with a self-exclusion test suite
+- Composite GitHub Action `check-script-parity` shared between `validate.yml` and `release.yml`
+- Helper extractions with dedicated test suites: `disambiguate-stale-source`, `extract-content-hash`, `parse-validation-entry`, `review-metadata-upgrade`
+- Codex integration design docs under `docs/`
+
+### Changed
+
+- `release.yml` and `validate.yml` now enforce script-tree parity, Codex skill frontmatter, and `${PR_REVIEW_TOOLKIT_ROOT}/scripts/*` reference resolution against both authoritative and packaged trees
+- Shell test suites run against `scripts/` and `plugins/pr-review-toolkit/scripts/` so the packaging contract is exercised end-to-end
+- Major version bump (3.0.0-rc.1) marking the Codex full-port milestone
+
 ## [2.0.2] - 2026-05-11
 
 ### Changed
@@ -131,7 +154,8 @@ This release is major due to:
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v3.0.0-rc.1...HEAD
+[3.0.0-rc.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v2.0.2...v3.0.0-rc.1
 [2.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.2...v2.0.0
 [1.4.2]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.0...v1.4.1

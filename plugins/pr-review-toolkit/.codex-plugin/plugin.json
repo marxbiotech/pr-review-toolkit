@@ -1,6 +1,6 @@
 {
   "name": "pr-review-toolkit",
-  "version": "2.0.2",
+  "version": "3.0.0-rc.1",
   "description": "PR review workflow skills for Codex: parallel review passes, documented PR comments, Gemini integration, interactive resolution, and resolver-managed bounded fixes.",
   "author": {
     "name": "MarxBiotech",
