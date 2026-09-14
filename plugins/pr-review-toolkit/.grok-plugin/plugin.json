@@ -1,6 +1,6 @@
 {
   "name": "pr-review-toolkit",
-  "version": "3.0.0-rc.1",
+  "version": "4.0.0",
   "description": "PR review workflow skills for Grok: parallel review passes, documented PR comments, interactive resolution, and resolver-managed bounded fixes.",
   "author": {
     "name": "MarxBiotech",

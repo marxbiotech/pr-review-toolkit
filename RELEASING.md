@@ -87,14 +87,14 @@ Use Method A when possible. If you must release manually, make the change in a P
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
      exit 1
    fi
-   echo "✓ All three at $A"
+   echo "✓ All five at $A"
    ```
 
    **Run this command before `git commit`.** If it fails, fix the missing manifest and re-run. CI on main (`validate.yml` push trigger) will also catch drift, but local verification is faster and prevents a known-bad commit from reaching origin.
 
 4. Commit and push:
    ```bash
-   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json CHANGELOG.md
+   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json plugins/pr-review-toolkit/.grok-plugin/plugin.json .grok-plugin/marketplace.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
    git push
    ```
@@ -148,6 +148,8 @@ Update all plugin manifests to have matching versions:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
 - `plugins/pr-review-toolkit/.codex-plugin/plugin.json` → `version`
+- `plugins/pr-review-toolkit/.grok-plugin/plugin.json` → `version`
+- `.grok-plugin/marketplace.json` → `plugins[0].version`
 
 ### Manual tag creation
 
