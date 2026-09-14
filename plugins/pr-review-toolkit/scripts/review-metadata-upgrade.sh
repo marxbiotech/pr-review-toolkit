@@ -115,6 +115,7 @@ jq --arg last_writer "$LAST_WRITER" '
   | ($sources.claude // {}) as $claude
   | ($sources.gemini // {}) as $gemini
   | ($sources.codex // {}) as $codex
+  | ($sources.grok // {}) as $grok
   | .schema_version = "1.1"
   | .created_by = (.created_by // .skill // (if $last_writer != "" then $last_writer else "unknown" end))
   | .last_writer = (if $last_writer != "" then $last_writer else (.last_writer // .skill // .created_by // "unknown") end)
@@ -132,7 +133,14 @@ jq --arg last_writer "$LAST_WRITER" '
       codex: {
         last_reviewed_head: ($codex.last_reviewed_head // null),
         last_reviewed_at: ($codex.last_reviewed_at // null),
-        posted_finding_ids: arr($codex.posted_finding_ids)
+        posted_finding_ids: arr($codex.posted_finding_ids),
+        agents_run: arr($codex.agents_run)
+      },
+      grok: {
+        last_reviewed_head: ($grok.last_reviewed_head // null),
+        last_reviewed_at: ($grok.last_reviewed_at // null),
+        posted_finding_ids: arr($grok.posted_finding_ids),
+        agents_run: arr($grok.agents_run)
       }
     }
   | .agents_run = .review_sources.claude.agents_run

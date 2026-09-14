@@ -52,7 +52,7 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 **未解決指標：**
 - `⚠️` 需要注意的項目（待處理）
 - `🔴` 阻擋性問題（必須在 merge 前解決）
-- `[Codex]` 或 `[Gemini]` 來源的 `⚠️` / `🔴` details
+- `[Codex]`、`[Gemini]` 或 `[Grok]` 來源的 `⚠️` / `🔴` details
 - 表格中的 `⚠️ Pending` 狀態
 - 沒有 `✅` 或 `⏭️` 前綴的 details summary
 - 「Action Plan」中沒有完成標記 `[x]` 的任務
@@ -65,6 +65,7 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
 **來源判斷：**
 - `[Codex]` = Codex review pass 產生的 issue
 - `[Gemini]` = Gemini Code Assist integration 產生的 issue
+- `[Grok]` = Grok review pass 產生的 issue
 - 無來源 prefix 的 issue 視為 Claude issue（相容既有 comment）
 
 ### 步驟 3：逐一處理每個項目（最重要！）
@@ -218,7 +219,7 @@ REVIEW_CONTENT=$(${CLAUDE_PLUGIN_ROOT}/scripts/cache-read-comment.sh "$PR_NUMBER
      # 替換 comment 中的 metadata block。
      UPDATED_CONTENT=$(printf '%s\n' "$REVIEW_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
      ```
-   - 保留 `review_sources`、`[Codex]` issues、`[Gemini]` issues，以及無 prefix 的 Claude issues
+   - 保留 `review_sources`、`[Codex]` issues、`[Gemini]` issues、`[Grok]` issues，以及無 prefix 的 Claude issues
    - 保持既有 `review_round` 不變（resolver 只更新狀態，不是 review producer）
    - 將 Status 更新為適當狀態
 

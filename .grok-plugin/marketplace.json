@@ -1,0 +1,32 @@
+{
+  "name": "marxbiotech-plugins",
+  "description": "MarxBiotech Grok plugins collection",
+  "owner": {
+    "name": "MarxBiotech",
+    "email": "xin@marxbiotech.com"
+  },
+  "plugins": [
+    {
+      "name": "pr-review-toolkit",
+      "description": "PR review workflow skills for Grok: parallel review passes, documented PR comments, interactive resolution, and resolver-managed bounded fixes.",
+      "version": "3.0.0-rc.1",
+      "author": {
+        "name": "MarxBiotech"
+      },
+      "homepage": "https://github.com/marxbiotech/pr-review-toolkit",
+      "repository": "https://github.com/marxbiotech/pr-review-toolkit",
+      "license": "MIT",
+      "keywords": [
+        "pr-review",
+        "code-review",
+        "github",
+        "grok"
+      ],
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/pr-review-toolkit"
+      }
+    }
+  ]
+}

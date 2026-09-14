@@ -131,7 +131,7 @@ Bootstrap 階段也必須序列化。若兩個 tool 同時判斷沒有 comment�
 
 `review_round` 是 PR-global review producer 輪次，不是 per-source 輪次。Claude/Codex `pr-review-and-document` 這類會發布 review results 的 producer 在產生含有新增 findings 的 review pass 時應 increment；空 review pass 只更新 source timestamp，不 increment。`codex-review-pass` 只產生 read-only review bundle，不直接 increment。`gemini-review-integrator` 只整合外部 comment，不 increment；`codex-fix-worker` 與 `pr-review-resolver` 只修復或更新狀態，也不 increment。
 
-`Reviewer Sources` 顯示行是由 metadata 派生的 UI 字串，依固定順序 `Claude, Gemini, Codex` 列出有參與的 source。參與判斷：Claude/Codex 使用 `last_reviewed_at != null`，Gemini 使用 `last_integrated_at != null` 或 `consumed_comment_ids` 非空。
+`Reviewer Sources` 顯示行是由 metadata 派生的 UI 字串，依固定順序 `Claude, Gemini, Codex, Grok` 列出有參與的 source。參與判斷：Claude/Codex/Grok 使用 `last_reviewed_at != null`，Gemini 使用 `last_integrated_at != null` 或 `consumed_comment_ids` 非空。Grok source 的包裝細節見 [`docs/grok-integration-design.md`](grok-integration-design.md)。
 
 ### Metadata Migration
 

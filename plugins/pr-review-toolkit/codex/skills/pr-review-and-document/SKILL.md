@@ -144,8 +144,8 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
    - `### 📋 Type Design Ratings`
    - `### 🎯 Action Plan`
 
-   Below the `## 🤖 PR Review` heading, render a `**Reviewer Sources:**` line in fixed order `Claude, Gemini, Codex`. Include a source only if it has participated: `Claude` when `review_sources.claude.last_reviewed_at != null`, `Gemini` when `review_sources.gemini.last_integrated_at != null` or `review_sources.gemini.consumed_comment_ids` is non-empty, `Codex` when `review_sources.codex.last_reviewed_at != null`. (Step 8 sets `review_sources.codex.last_reviewed_at`, so after this skill finishes the line will always include `Codex`.)
-6. Append only new Codex findings. Preserve existing `[Gemini]`, `[Codex]`, and untagged Claude issues. Treat untagged issues as Claude issues.
+   Below the `## 🤖 PR Review` heading, render a `**Reviewer Sources:**` line in fixed order `Claude, Gemini, Codex, Grok`. Include a source only if it has participated: `Claude` when `review_sources.claude.last_reviewed_at != null`, `Gemini` when `review_sources.gemini.last_integrated_at != null` or `review_sources.gemini.consumed_comment_ids` is non-empty, `Codex` when `review_sources.codex.last_reviewed_at != null`, `Grok` when `review_sources.grok.last_reviewed_at != null`. (Step 8 sets `review_sources.codex.last_reviewed_at`, so after this skill finishes the line will always include `Codex`.)
+6. Append only new Codex findings. Preserve existing `[Gemini]`, `[Codex]`, `[Grok]`, and untagged Claude issues. Treat untagged issues as Claude issues.
 7. Upgrade metadata to schema `1.1`. In append mode pipe the existing comment; in bootstrap mode pipe a minimal seed so the upgrade script can produce a complete 1.1 envelope:
 
    ```bash
@@ -168,6 +168,7 @@ Before running the workflow, verify helper scripts are executable and `scripts/l
    - `review_sources.codex.posted_finding_ids`: stable IDs from the review bundle
    - `review_sources.codex.agents_run`: the six Codex review agents
    - `review_sources.claude.agents_run`: preserve existing value, or `[]` on Codex bootstrap
+   - `review_sources.grok`: preserve existing value
    - top-level `agents_run`: preserve as the Claude compatibility mirror, or `[]` on Codex bootstrap
 9. Increment PR-global `review_round` only when this run adds new findings. Empty refreshes update Codex source timestamps without changing counts or existing statuses.
 10. Replace the hidden metadata block with `review-metadata-replace.sh`. The script requires a metadata JSON file path; pipe the comment over stdin:

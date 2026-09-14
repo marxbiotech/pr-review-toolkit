@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Claude Code plugin for PR review workflows with companion Codex packaging. Claude metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; Codex metadata lives in `.agents/plugins/marketplace.json` (marketplace entry) and `plugins/pr-review-toolkit/.codex-plugin/plugin.json` (plugin manifest, packaged under a non-root plugin directory so Codex's marketplace resolver accepts it). Keep all plugin version fields in sync. Claude skills are stored in `skills/<skill-name>/SKILL.md`, with supporting material under each skill's `references/` directory when needed. User-facing command docs live in `commands/`. Reusable shell utilities live in `scripts/`, with shared helpers in `scripts/lib/common.sh`. Workflow and release notes are documented in `docs/`, `README.md`, `CHANGELOG.md`, and `RELEASING.md`. GitHub Actions are in `.github/workflows/`.
+This repository is a Claude Code plugin for PR review workflows with companion Codex and Grok packaging. Claude metadata lives in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`; Codex metadata lives in `.agents/plugins/marketplace.json` (marketplace entry) and `plugins/pr-review-toolkit/.codex-plugin/plugin.json` (plugin manifest, packaged under a non-root plugin directory so Codex's marketplace resolver accepts it); Grok metadata lives in `.grok-plugin/marketplace.json` (marketplace entry) and `plugins/pr-review-toolkit/.grok-plugin/plugin.json` (plugin manifest in the same packaged plugin directory). Keep all plugin version fields in sync. Claude skills are stored in `skills/<skill-name>/SKILL.md`, with supporting material under each skill's `references/` directory when needed. User-facing command docs live in `commands/`. Reusable shell utilities live in `scripts/`, with shared helpers in `scripts/lib/common.sh`. Workflow and release notes are documented in `docs/`, `README.md`, `CHANGELOG.md`, and `RELEASING.md`. GitHub Actions are in `.github/workflows/`.
 
 **Authoritative vs. packaged scripts.** The `scripts/` directory is authoritative; CI (`validate.yml` and `release.yml`) keeps the packaged copies under `plugins/pr-review-toolkit/scripts/` byte-identical and mode-identical. When editing a helper, change both trees in the same commit, or sync via `rsync -a --delete scripts/ plugins/pr-review-toolkit/scripts/`. Each helper carries a header banner noting the duplication. Helper `# Usage:` strings are written helper-directory-relative (e.g. `./cache-read-comment.sh [PR_NUMBER]`), with `deploy-pr.sh` as the lone exception (repo-root form). For Codex-skill invocation, prefer the absolute form `${PR_REVIEW_TOOLKIT_ROOT}/scripts/<helper>.sh`.
 
@@ -10,12 +10,16 @@ This repository is a Claude Code plugin for PR review workflows with companion C
 
 Codex-facing skills live under `plugins/pr-review-toolkit/codex/skills/<skill-name>/SKILL.md`, parallel to the Claude `skills/` tree. They target Codex's skill runtime and resolve their toolkit root via the `${PR_REVIEW_TOOLKIT_ROOT}` environment variable rather than `${CLAUDE_PLUGIN_ROOT}`, and they execute the packaged helper scripts under `plugins/pr-review-toolkit/scripts/`, which CI keeps byte-identical to the authoritative copies in `scripts/`. Currently shipped: `codex-review-pass` (review producer with bootstrap and append modes) and `codex-fix-worker` (bounded per-issue fix skill invoked by the dev agent). The Codex marketplace entry points to the packaged plugin directory `./plugins/pr-review-toolkit`, and the Codex plugin manifest points `skills` to `./codex/skills/` (relative to that plugin root); keep both paths stable when moving files. See `README.md` for source-install steps and `docs/codex-integration-design.md` for the contract.
 
+### Grok Skills
+
+Grok-facing skills live under `plugins/pr-review-toolkit/skills/<skill-name>/SKILL.md`, with the six read-only review agents under `plugins/pr-review-toolkit/agents/`. They resolve the packaged plugin root from `GROK_PLUGIN_ROOT` (plugin runtime), then `${PR_REVIEW_TOOLKIT_ROOT}`, then two levels up from the skill path. Currently shipped: `grok-review-pass`, `pr-review-and-document`, `pr-review-resolver`, and `grok-fix-worker`. The Grok marketplace entry at `.grok-plugin/marketplace.json` points to `./plugins/pr-review-toolkit`. See `README.md` for install steps and `docs/grok-integration-design.md` for the contract.
+
 ## Build, Test, and Development Commands
 
 There is no compile step; this project is Markdown, JSON, and Bash.
 
 - `bash -n scripts/*.sh scripts/lib/*.sh`: syntax-check shell scripts.
-- `jq empty .claude-plugin/plugin.json .claude-plugin/marketplace.json .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json`: validate plugin JSON.
+- `jq empty .claude-plugin/plugin.json .claude-plugin/marketplace.json .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json plugins/pr-review-toolkit/.grok-plugin/plugin.json .grok-plugin/marketplace.json`: validate plugin JSON.
 - `./scripts/cache-sync.sh [PR_NUMBER]`: refresh the local `.pr-review-cache/` entry from GitHub.
 - `./scripts/deploy-pr.sh`: deploy current branch changes through the project workflow.
 - `git diff --check`: catch whitespace errors before committing.
@@ -35,7 +39,7 @@ Test suites live under `tests/*-test.sh` and are exercised by `validate.yml` aga
 
 ## Commit & Pull Request Guidelines
 
-Recent history follows Conventional Commits, for example `fix(resolver): add missing allowed-tools` and `feat(cache): eliminate temp files with stdin pipe architecture`. Use `feat`, `fix`, `chore`, or `docs`, with an optional scope. PRs should include a concise summary, validation commands run, linked issues when applicable, and screenshots or pasted command output only when they clarify behavior. For release PRs, update `CHANGELOG.md` and keep `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `plugins/pr-review-toolkit/.codex-plugin/plugin.json` aligned.
+Recent history follows Conventional Commits, for example `fix(resolver): add missing allowed-tools` and `feat(cache): eliminate temp files with stdin pipe architecture`. Use `feat`, `fix`, `chore`, or `docs`, with an optional scope. PRs should include a concise summary, validation commands run, linked issues when applicable, and screenshots or pasted command output only when they clarify behavior. For release PRs, update `CHANGELOG.md` and keep `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, and `.grok-plugin/marketplace.json` aligned.
 
 ## Security & Configuration Tips
 

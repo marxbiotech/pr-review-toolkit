@@ -54,7 +54,9 @@ jobs:
           for spec in \
             ".claude-plugin/plugin.json:.version" \
             ".claude-plugin/marketplace.json:.plugins[0].version" \
-            "plugins/pr-review-toolkit/.codex-plugin/plugin.json:.version"; do
+            "plugins/pr-review-toolkit/.codex-plugin/plugin.json:.version" \
+            "plugins/pr-review-toolkit/.grok-plugin/plugin.json:.version" \
+            ".grok-plugin/marketplace.json:.plugins[0].version"; do
             file="${spec%%:*}"
             path="${spec#*:}"
             tmp=$(mktemp)

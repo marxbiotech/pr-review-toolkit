@@ -142,7 +142,7 @@ Key formatting rules:
      ```
 
      `$NEW_INTEGRATED_IDS` must be a JSON array of the integer comment IDs newly consumed in this run (e.g. `[2726014213, 2726014217]`).
-   - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues
+   - Preserve `review_sources.codex`, `review_sources.claude`, `review_sources.grok`, `[Codex]` issues, `[Grok]` issues, and untagged Claude issues
    - Increment issue counts in `issues` object
    - Update `updated_at` timestamp
 4. Insert new Gemini issues into appropriate sections (Critical, Important, Suggestions)

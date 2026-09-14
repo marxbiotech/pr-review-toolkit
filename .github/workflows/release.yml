@@ -6,6 +6,7 @@ on:
     paths:
       - '.claude-plugin/plugin.json'
       - 'plugins/pr-review-toolkit/.codex-plugin/plugin.json'
+      - 'plugins/pr-review-toolkit/.grok-plugin/plugin.json'
 
 jobs:
   release:
@@ -27,14 +28,20 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
           C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
-          if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
+          D=$(jq -e -r '.version' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"; exit 1; }
+          E=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"; exit 1; }
+          if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ]; then
             echo "::error::Refusing to tag: version drift across manifests"
             echo "  .claude-plugin/plugin.json:        $A"
             echo "  .claude-plugin/marketplace.json:   $B"
             echo "  plugins/pr-review-toolkit/.codex-plugin/plugin.json:         $C"
+            echo "  plugins/pr-review-toolkit/.grok-plugin/plugin.json:          $D"
+            echo "  .grok-plugin/marketplace.json:     $E"
             exit 1
           fi
-          echo "✓ All three manifests at $A"
+          echo "✓ All five manifests at $A"
 
       - name: Verify release artifacts
         run: |
@@ -43,7 +50,9 @@ jobs:
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
             plugins/pr-review-toolkit/.codex-plugin/plugin.json \
-            .agents/plugins/marketplace.json
+            .agents/plugins/marketplace.json \
+            plugins/pr-review-toolkit/.grok-plugin/plugin.json \
+            .grok-plugin/marketplace.json
 
           # Keep this manifest list in sync with validate.yml's required_files
           # and JSON syntax checks when adding packaging metadata files.
@@ -51,14 +60,16 @@ jobs:
             .claude-plugin/plugin.json \
             .claude-plugin/marketplace.json \
             plugins/pr-review-toolkit/.codex-plugin/plugin.json \
-            .agents/plugins/marketplace.json; do
+            .agents/plugins/marketplace.json \
+            plugins/pr-review-toolkit/.grok-plugin/plugin.json \
+            .grok-plugin/marketplace.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Release blocked: missing artifact $f at HEAD"
               exit 1
             fi
           done
 
-          # Keep in sync with validate.yml's Codex skill loop.
+          # Keep in sync with validate.yml's Codex and Grok skill loops.
           skill_count=0
           for skill_dir in plugins/pr-review-toolkit/codex/skills/*; do
             [ -d "$skill_dir" ] || continue
@@ -71,6 +82,21 @@ jobs:
           done
           if [ "$skill_count" -eq 0 ]; then
             echo "::error::Release blocked: no Codex skills found under plugins/pr-review-toolkit/codex/skills/"
+            exit 1
+          fi
+
+          grok_skill_count=0
+          for skill_dir in plugins/pr-review-toolkit/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            grok_skill_count=$((grok_skill_count + 1))
+            skill_file="$skill_dir/SKILL.md"
+            if [ ! -f "$skill_file" ]; then
+              echo "::error::Release blocked: missing Grok skill $skill_file at HEAD"
+              exit 1
+            fi
+          done
+          if [ "$grok_skill_count" -eq 0 ]; then
+            echo "::error::Release blocked: no Grok skills found under plugins/pr-review-toolkit/skills/"
             exit 1
           fi
 

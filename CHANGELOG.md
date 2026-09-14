@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Grok plugin packaging: `.grok-plugin/marketplace.json` plus `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, with Grok skills under `plugins/pr-review-toolkit/skills/` and six read-only review agents under `plugins/pr-review-toolkit/agents/`
+- `grok-review-pass` skill: launches parallel read-only review subagents and returns a deduplicated finding bundle
+- `pr-review-and-document` Grok skill: publishes the bundle through the shared `.pr-review-cache/pr-#.json` contract
+- `pr-review-resolver` Grok skill: discusses unresolved findings one by one in Traditional Chinese and coordinates bounded fix work
+- `grok-fix-worker` Grok skill: resolver-managed, bounded per-issue fix executor — explicitly forbidden from touching review state
+- `review_sources.grok` in comment metadata schema 1.1, preserved by `review-metadata-upgrade.sh`
+- Grok integration design doc under `docs/grok-integration-design.md`
+
+### Changed
+
+- Claude and Codex skills now preserve `[Grok]` findings and `review_sources.grok`
+- `Reviewer Sources` display order is `Claude, Gemini, Codex, Grok`
+- CI, bump-version, and release workflows keep Grok marketplace and plugin manifests in version parity with Claude and Codex
+
 ## [3.0.0-rc.1] - 2026-06-01
 
 Release candidate for v3.0.0. The Codex side of the toolkit reaches feature parity with the Claude side: parallel review producer, canonical comment writer, Gemini integrator, interactive resolver, and resolver-managed bounded fix worker.

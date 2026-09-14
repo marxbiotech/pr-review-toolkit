@@ -61,7 +61,7 @@ if [ $# -eq 0 ]; then
   # rather than `.` to keep generated/vendored content (e.g. node_modules
   # if introduced) outside the scan.
   paths=(scripts/ tests/ plugins/ docs/ .github/ skills/ commands/
-         .agents/ .claude-plugin/
+         .agents/ .claude-plugin/ .grok-plugin/
          AGENTS.md CHANGELOG.md CLAUDE.md RELEASING.md)
 else
   paths=("$@")
