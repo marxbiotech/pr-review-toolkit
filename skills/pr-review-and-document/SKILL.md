@@ -39,7 +39,7 @@ If content is returned:
 - Extract metadata from `<!-- pr-review-metadata ... -->` block
 - Note the current `review_round` and issues status
 - Read `.pr-review-cache/pr-${PR_NUMBER}.json` and save `.content_hash` as `EXPECTED_CONTENT_HASH`
-- Preserve any existing `[Gemini]` and `[Codex]` issues and `review_sources` metadata when writing the next review
+- Preserve any existing `[Gemini]`, `[Codex]`, and `[Grok]` issues and `review_sources` metadata when writing the next review
 
 ### Step 3: Execute PR Review
 
@@ -85,7 +85,7 @@ Structure the review as a PR comment with hidden metadata and collapsible sectio
   # Replace the metadata block in the comment.
   UPDATED_CONTENT=$(printf '%s\n' "$EXISTING_CONTENT" | ${CLAUDE_PLUGIN_ROOT}/scripts/review-metadata-replace.sh --stdin --metadata-file "$METADATA_FILE")
   ```
-- Preserve `review_sources.gemini`, `review_sources.codex`, `[Gemini]` issues, and `[Codex]` issues
+- Preserve `review_sources.gemini`, `review_sources.codex`, `review_sources.grok`, `[Gemini]` issues, `[Codex]` issues, and `[Grok]` issues
 - Preserve existing issue statuses (`✅`, `⏭️`, `⚠️`, `🔴`) unless the new Claude review proves they changed
 - Treat untagged issues as Claude issues
 - Increment PR-global `review_round` only when this review adds new findings; empty refreshes only update `review_sources.claude.last_reviewed_*`
@@ -133,6 +133,12 @@ The metadata block uses HTML comment syntax with a specific marker for identific
       "last_reviewed_head": null,
       "last_reviewed_at": null,
       "posted_finding_ids": []
+    },
+    "grok": {
+      "last_reviewed_head": null,
+      "last_reviewed_at": null,
+      "posted_finding_ids": [],
+      "agents_run": []
     }
   }
 }

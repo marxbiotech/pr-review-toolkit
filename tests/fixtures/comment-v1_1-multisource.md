@@ -27,7 +27,14 @@
     "codex": {
       "last_reviewed_head": "def",
       "last_reviewed_at": "2026-05-01T01:00:00Z",
-      "posted_finding_ids": ["codex:src/example.ts:fn:bug:abcd"]
+      "posted_finding_ids": ["codex:src/example.ts:fn:bug:abcd"],
+      "agents_run": ["code-reviewer"]
+    },
+    "grok": {
+      "last_reviewed_head": "ghi",
+      "last_reviewed_at": "2026-05-01T01:15:00Z",
+      "posted_finding_ids": ["grok:src/example.ts:fn:bug:ef01"],
+      "agents_run": ["code-reviewer", "silent-failure-hunter"]
     }
   }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "pr-review-toolkit",
+  "version": "3.0.0-rc.1",
+  "description": "PR review workflow skills for Grok: parallel review passes, documented PR comments, interactive resolution, and resolver-managed bounded fixes.",
+  "author": {
+    "name": "MarxBiotech",
+    "email": "xin@marxbiotech.com",
+    "url": "https://github.com/marxbiotech"
+  },
+  "homepage": "https://github.com/marxbiotech/pr-review-toolkit",
+  "repository": "https://github.com/marxbiotech/pr-review-toolkit",
+  "license": "MIT",
+  "keywords": [
+    "pr-review",
+    "code-review",
+    "github",
+    "grok",
+    "claude",
+    "codex"
+  ]
+}

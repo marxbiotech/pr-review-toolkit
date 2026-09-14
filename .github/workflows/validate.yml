@@ -21,6 +21,8 @@ jobs:
           jq empty .claude-plugin/marketplace.json
           jq empty plugins/pr-review-toolkit/.codex-plugin/plugin.json
           jq empty .agents/plugins/marketplace.json
+          jq empty plugins/pr-review-toolkit/.grok-plugin/plugin.json
+          jq empty .grok-plugin/marketplace.json
           echo "✅ JSON syntax is valid"
 
       - name: Validate required files exist
@@ -28,14 +30,15 @@ jobs:
           set -euo pipefail
           echo "Checking required files..."
           # Hardcoded list of stable required files (manifests + repo conventions).
-          # Codex skill files (plugins/pr-review-toolkit/codex/skills/*/SKILL.md) are validated dynamically
-          # in the later "Validate Codex skills" step — adding a new skill does
-          # not require updating this list.
+          # Codex and Grok skill files are validated dynamically in later
+          # steps — adding a new skill does not require updating this list.
           required_files=(
             ".claude-plugin/plugin.json"
             ".claude-plugin/marketplace.json"
             "plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             ".agents/plugins/marketplace.json"
+            "plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            ".grok-plugin/marketplace.json"
             "README.md"
             "LICENSE"
           )
@@ -88,6 +91,14 @@ jobs:
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
             exit 1
           }
+          GROK_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          }
+          GROK_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"
+            exit 1
+          }
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -110,6 +121,18 @@ jobs:
           fi
           echo "✅ plugins/pr-review-toolkit/.codex-plugin/plugin.json version: $CODEX_PLUGIN_VERSION"
 
+          if [[ ! "$GROK_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in plugins/pr-review-toolkit/.grok-plugin/plugin.json: $GROK_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ plugins/pr-review-toolkit/.grok-plugin/plugin.json version: $GROK_PLUGIN_VERSION"
+
+          if [[ ! "$GROK_MARKETPLACE_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in .grok-plugin/marketplace.json plugins[0].version: $GROK_MARKETPLACE_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ .grok-plugin/marketplace.json plugins[0].version: $GROK_MARKETPLACE_PLUGIN_VERSION"
+
       - name: Validate version consistency
         run: |
           set -euo pipefail
@@ -124,6 +147,14 @@ jobs:
           }
           CODEX_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"
+            exit 1
+          }
+          GROK_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          }
+          GROK_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"
             exit 1
           }
 
@@ -142,6 +173,24 @@ jobs:
             echo "   plugins/pr-review-toolkit/.codex-plugin/plugin.json:  $CODEX_PLUGIN_VERSION"
             echo ""
             echo "Claude and Codex plugin manifests must ship the same plugin version."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$GROK_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   plugins/pr-review-toolkit/.grok-plugin/plugin.json:  $GROK_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Grok plugin manifests must ship the same plugin version."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$GROK_MARKETPLACE_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   .grok-plugin/marketplace.json plugins: $GROK_MARKETPLACE_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Grok marketplace plugin versions must match."
             exit 1
           fi
 
@@ -271,10 +320,52 @@ jobs:
 
           echo "✅ Plugin name: $PLUGIN_NAME"
           echo "✅ Plugin description: $PLUGIN_DESC"
+          GROK_PLUGIN_NAME=$(jq -e -r '.name' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          }
+          GROK_PLUGIN_DESC=$(jq -e -r '.description' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          }
+          GROK_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .grok-plugin/marketplace.json"
+            exit 1
+          }
+          GROK_MARKETPLACE_PATH=$(jq -e -r '.plugins[0].source.path' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.path from .grok-plugin/marketplace.json"
+            exit 1
+          }
+
+          if [ -z "$GROK_PLUGIN_NAME" ] || [ "$GROK_PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$GROK_PLUGIN_DESC" ] || [ "$GROK_PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in plugins/pr-review-toolkit/.grok-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ "$GROK_MARKETPLACE_NAME" != "$GROK_PLUGIN_NAME" ]; then
+            echo "❌ Grok marketplace plugin name must match plugins/pr-review-toolkit/.grok-plugin/plugin.json name"
+            echo "   marketplace: $GROK_MARKETPLACE_NAME"
+            echo "   plugin.json: $GROK_PLUGIN_NAME"
+            exit 1
+          fi
+
+          if [ "$GROK_MARKETPLACE_PATH" != "./plugins/pr-review-toolkit" ]; then
+            echo "❌ Grok marketplace source.path must point at ./plugins/pr-review-toolkit, got: $GROK_MARKETPLACE_PATH"
+            exit 1
+          fi
+
           echo "✅ Codex plugin name: $CODEX_PLUGIN_NAME"
           echo "✅ Codex plugin description: $CODEX_PLUGIN_DESC"
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
           echo "✅ Codex marketplace entry: $CODEX_MARKETPLACE_NAME -> $CODEX_MARKETPLACE_PATH"
+          echo "✅ Grok plugin name: $GROK_PLUGIN_NAME"
+          echo "✅ Grok plugin description: $GROK_PLUGIN_DESC"
+          echo "✅ Grok marketplace entry: $GROK_MARKETPLACE_NAME -> $GROK_MARKETPLACE_PATH"
 
       - name: Check script parity
         uses: ./.github/actions/check-script-parity
@@ -406,6 +497,63 @@ jobs:
           fi
           echo "Validated $skill_count Codex skill(s)"
 
+      - name: Validate Grok skills
+        run: |
+          set -euo pipefail
+          echo "Validating Grok skill frontmatter..."
+
+          skill_count=0
+          for skill_dir in plugins/pr-review-toolkit/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
+            skill_name=$(basename "$skill_dir")
+            skill_file="$skill_dir/SKILL.md"
+
+            if [ ! -f "$skill_file" ]; then
+              echo "❌ Missing Grok skill file: $skill_file"
+              exit 1
+            fi
+
+            first_line=$(head -n 1 "$skill_file")
+            if [ "$first_line" != "---" ]; then
+              echo "::error::$skill_file: opening '---' frontmatter delimiter must be on line 1 (got: '$first_line')"
+              exit 1
+            fi
+            fm=$(awk 'NR==1 && /^---[[:space:]]*$/ {in_fm=1; next}
+                      in_fm && /^---[[:space:]]*$/ {exit}
+                      in_fm {print}' "$skill_file")
+            if [ -z "$fm" ]; then
+              echo "::error::$skill_file: missing closing '---' frontmatter delimiter"
+              exit 1
+            fi
+
+            name=$(printf '%s\n' "$fm" | yq -r '.name // ""')
+            desc=$(printf '%s\n' "$fm" | yq -r '.description // ""')
+
+            if [ "$name" != "$skill_name" ]; then
+              echo "::error::name mismatch: '$name' != '$skill_name' in $skill_file"
+              exit 1
+            fi
+
+            if [ -z "$desc" ]; then
+              echo "::error::Empty or missing description in $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q 'PR_REVIEW_TOOLKIT_ROOT' "$skill_file"; then
+              echo "❌ Grok skill must document PR_REVIEW_TOOLKIT_ROOT: $skill_file"
+              exit 1
+            fi
+
+            echo "✅ Grok skill: $skill_name"
+          done
+
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::No Grok skills found under plugins/pr-review-toolkit/skills/"
+            exit 1
+          fi
+          echo "Validated $skill_count Grok skill(s)"
+
       - name: Validate SKILL.md script references resolve
         # Greps every Codex SKILL.md for ${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh references
         # and asserts each named script exists and is executable in BOTH script trees
@@ -423,9 +571,12 @@ jobs:
           # matches zero (skill dir moved or renamed). nullglob + check-then-loop
           # avoids the older anti-pattern where the lint silently passed by
           # iterating zero items.
-          skill_files=(plugins/pr-review-toolkit/codex/skills/*/SKILL.md)
+          skill_files=(
+            plugins/pr-review-toolkit/codex/skills/*/SKILL.md
+            plugins/pr-review-toolkit/skills/*/SKILL.md
+          )
           if [ "${#skill_files[@]}" -eq 0 ]; then
-            echo "::error::No Codex SKILL.md files found under plugins/pr-review-toolkit/codex/skills/*/ — has the skill directory moved?"
+            echo "::error::No SKILL.md files found under plugins/pr-review-toolkit/{codex/,}skills/*/ — has a skill directory moved?"
             exit 1
           fi
 
@@ -512,6 +663,22 @@ jobs:
             exit 1
           fi
           echo "✅ codex-fix-worker SKILL.md does not call review-state scripts"
+
+      - name: Lock grok-fix-worker resolver-managed contract
+        run: |
+          set -euo pipefail
+          worker_skill="plugins/pr-review-toolkit/skills/grok-fix-worker/SKILL.md"
+
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|cache-cleanup|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+
+          if awk '
+              /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
+              in_fence { print }
+            ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. grok-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, cache-cleanup, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            exit 1
+          fi
+          echo "✅ grok-fix-worker SKILL.md does not call review-state scripts"
 
       - name: Reject PR-round identifiers in source
         # Delegated to scripts/check-pr-round-identifiers.sh so the lint

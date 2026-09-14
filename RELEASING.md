@@ -11,10 +11,13 @@ This document describes how to release new versions of the pr-review-toolkit plu
 | `.claude-plugin/marketplace.json` | `metadata.version` | Marketplace format version (not plugin version, keep at 1.0.0) |
 | `plugins/pr-review-toolkit/.codex-plugin/plugin.json` | `version` | Codex plugin version (must match plugin.json) |
 | `.agents/plugins/marketplace.json` | `plugins[0].source.path` | Repo-scoped Codex marketplace entry (keep as `./plugins/pr-review-toolkit`) |
+| `plugins/pr-review-toolkit/.grok-plugin/plugin.json` | `version` | Grok plugin version (must match plugin.json) |
+| `.grok-plugin/marketplace.json` | `plugins[0].version` | Grok marketplace plugin version (must match plugin.json) |
+| `.grok-plugin/marketplace.json` | `plugins[0].source.path` | Grok marketplace entry (keep as `./plugins/pr-review-toolkit`) |
 
-> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, and `plugins/pr-review-toolkit/.codex-plugin/plugin.json` must always use the same plugin version.
+> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, and `.grok-plugin/marketplace.json` plugins[0].version must always use the same plugin version.
 
-> **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. Both ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
+> **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex and Grok plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. The ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
 
 ## Semantic Versioning
 
@@ -44,7 +47,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 3. Click **Run workflow**
 
 The workflow will:
-- Update version in `plugin.json`, `marketplace.json`, and `plugins/pr-review-toolkit/.codex-plugin/plugin.json`
+- Update version in `plugin.json`, `marketplace.json`, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, and `.grok-plugin/marketplace.json`
 - Update `CHANGELOG.md`
 - Commit and push to main
 - Trigger the release workflow automatically
@@ -58,13 +61,15 @@ Use Method A when possible. If you must release manually, make the change in a P
    # Edit .claude-plugin/plugin.json
    # Edit .claude-plugin/marketplace.json (plugins[0].version only)
    # Edit plugins/pr-review-toolkit/.codex-plugin/plugin.json
+   # Edit plugins/pr-review-toolkit/.grok-plugin/plugin.json
+   # Edit .grok-plugin/marketplace.json (plugins[0].version only)
    ```
 
 2. Update `CHANGELOG.md`:
    - Add a new section under `## [Unreleased]`
    - Follow [Keep a Changelog](https://keepachangelog.com/) format
 
-3. Verify all three versions match before committing:
+3. Verify all five versions match before committing:
    ```bash
    set -euo pipefail
    A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
@@ -73,8 +78,12 @@ Use Method A when possible. If you must release manually, make the change in a P
      echo "Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
    C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
      echo "Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
-   if [ "$A" != "$B" ] || [ "$A" != "$C" ]; then
-     echo "Version mismatch: A=$A B=$B C=$C"
+   D=$(jq -e -r '.version' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+     echo "Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"; exit 1; }
+   E=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
+     echo "Failed to read .plugins[0].version from .grok-plugin/marketplace.json"; exit 1; }
+   if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ]; then
+     echo "Version mismatch: A=$A B=$B C=$C D=$D E=$E"
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
      exit 1
    fi

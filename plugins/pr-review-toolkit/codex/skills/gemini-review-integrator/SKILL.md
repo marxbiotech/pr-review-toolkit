@@ -16,7 +16,7 @@ This skill integrates external Gemini feedback only. It is not a review producer
 - It does not run `codex-review-pass`.
 - It does not ask the user to resolve findings.
 - It does not modify source files.
-- It preserves Claude, Codex, and existing Gemini issues.
+- It preserves Claude, Codex, Grok, and existing Gemini issues.
 
 Find the toolkit root in this order:
 
@@ -165,7 +165,7 @@ Before running the workflow, verify these helper scripts are executable and `scr
     - Add the same IDs to legacy `gemini_integrated_ids`.
     - Set both `review_sources.gemini.last_integrated_at` and legacy `gemini_integration_date` to the current UTC timestamp.
     - Set `last_writer` / `skill` as appropriate for `gemini-review-integrator`.
-    - Preserve `review_sources.codex`, `review_sources.claude`, `[Codex]` issues, and untagged Claude issues.
+    - Preserve `review_sources.codex`, `review_sources.claude`, `review_sources.grok`, `[Codex]` issues, `[Grok]` issues, and untagged Claude issues.
     - Keep `review_round` unchanged. Gemini integration is not a review producer.
 12. Replace the hidden metadata block with `review-metadata-replace.sh`. The script requires a metadata JSON file path; pipe the comment over stdin:
 

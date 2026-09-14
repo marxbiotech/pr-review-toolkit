@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/github/v/release/marxbiotech/pr-review-toolkit?label=version)](https://github.com/marxbiotech/pr-review-toolkit/releases)
 [![License](https://img.shields.io/github/license/marxbiotech/pr-review-toolkit)](LICENSE)
 
-A Claude Code plugin for comprehensive PR review workflow: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
+A Claude Code plugin for comprehensive PR review workflow, with companion Codex and Grok packaging: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
 
 > **Latest:** See [CHANGELOG.md](CHANGELOG.md) for release notes | [Releases](https://github.com/marxbiotech/pr-review-toolkit/releases) for downloads
 
@@ -99,6 +99,42 @@ ACP approval matching is a literal prefix match against the command Codex execut
 
 Avoid broader prefixes like `["bash"]` or `["./"]` that would auto-approve unrelated commands.
 
+### Grok Plugin / Skills (From Source)
+
+This repository also includes a Grok marketplace at `.grok-plugin/marketplace.json` and a Grok plugin packaged under `plugins/pr-review-toolkit/` (manifest at `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, skills at `plugins/pr-review-toolkit/skills/`, review agents at `plugins/pr-review-toolkit/agents/`, and the same helper scripts under `plugins/pr-review-toolkit/scripts/`):
+
+| Skill | Description |
+|-------|-------------|
+| **grok-review-pass** | Run six read-only Grok review subagents in parallel and return one deduplicated review bundle |
+| **pr-review-and-document** | Publish the Grok review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
+| **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
+| **grok-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
+
+Do not `grok plugin install .` at the repository root: that loads the Claude plugin (`pr-workflow`) and its Claude skills. Add the repo as a Grok marketplace and install `pr-review-toolkit`:
+
+```bash
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
+cd pr-review-toolkit
+jq empty .grok-plugin/marketplace.json plugins/pr-review-toolkit/.grok-plugin/plugin.json
+grok plugin marketplace add .
+grok plugin install pr-review-toolkit --trust
+```
+
+From GitHub:
+
+```bash
+grok plugin marketplace add marxbiotech/pr-review-toolkit
+grok plugin install pr-review-toolkit --trust
+```
+
+Set the toolkit root for source-tree Grok sessions that run these skills without a trusted plugin install. Point it at the packaged plugin root:
+
+```bash
+export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
+```
+
+Grok review is split the same way as Codex. `grok-review-pass` is read-only: it launches the six review subagents and returns a normalized bundle. `pr-review-and-document` owns review publishing. `pr-review-resolver` is the interactive decision coordinator. `grok-fix-worker` is resolver-managed only. See [`docs/grok-integration-design.md`](docs/grok-integration-design.md).
+
 ## Usage
 
 ### PR Review and Document
@@ -134,6 +170,28 @@ Resolve existing review findings one by one with Codex. The resolver discusses e
 
 ```
 Resolve PR review findings with Codex
+```
+
+### Grok PR Review and Document
+
+Run a Grok review with six parallel read-only review subagents, then publish one canonical PR comment:
+
+```
+Run a Grok PR review and document the results
+```
+
+For analysis only, without writing the PR comment, ask for:
+
+```
+Run a Grok review pass
+```
+
+### Grok PR Review Resolver
+
+Resolve existing review findings one by one with Grok. The resolver discusses each unresolved item in Traditional Chinese, asks for a decision, coordinates bounded fix work, and updates the canonical review comment through `.pr-review-cache`:
+
+```
+Resolve PR review findings with Grok
 ```
 
 ### Codex Gemini Review Integrator
@@ -212,6 +270,21 @@ The five skills map one-to-one to the five role boundaries:
 - **Integrator** — `gemini-review-integrator` merges Gemini Code Assist inline comments into the canonical comment.
 - **Resolver** — `pr-review-resolver` owns user interaction and all status updates.
 - **Worker** — `codex-fix-worker` is resolver-managed and performs bounded code edits for one selected issue.
+
+### Grok flow
+
+```mermaid
+graph LR
+    A[Create PR] --> B[grok-review-pass]
+    B --> C[pr-review-and-document]
+    C --> D[pr-review-resolver]
+    D -->|user picks Fix| E[grok-fix-worker]
+    E --> D
+    D --> F[Issues Resolved]
+    F --> G[Merge PR]
+```
+
+The four Grok skills map to the same role boundaries as Codex (`grok-review-pass` producer, `pr-review-and-document` publisher, `pr-review-resolver` resolver, `grok-fix-worker` worker). See [`docs/grok-integration-design.md`](docs/grok-integration-design.md).
 
 ## PR Comment Structure
 
