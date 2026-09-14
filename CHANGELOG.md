@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-15
+
+Grok is now a first-class review producer alongside Claude and Codex. This major release ships Grok marketplace packaging, Grok skills, and additive `review_sources.grok` metadata so Claude/Codex/Grok can share the same canonical PR comment.
+
 ### Added
 
 - Grok plugin packaging: `.grok-plugin/marketplace.json` plus `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, with Grok skills under `plugins/pr-review-toolkit/skills/` and six read-only review agents under `plugins/pr-review-toolkit/agents/`
@@ -22,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude and Codex skills now preserve `[Grok]` findings and `review_sources.grok`
 - `Reviewer Sources` display order is `Claude, Gemini, Codex, Grok`
 - CI, bump-version, and release workflows keep Grok marketplace and plugin manifests in version parity with Claude and Codex
+- Major version bump (4.0.0) marking the Grok full-port milestone
 
 ## [3.0.0-rc.1] - 2026-06-01
 

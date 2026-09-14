@@ -124,11 +124,15 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .claude-plugin/marketplace.json"; exit 1; }
           C=$(jq -e -r '.version' plugins/pr-review-toolkit/.codex-plugin/plugin.json) || {
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.codex-plugin/plugin.json"; exit 1; }
-          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ]; then
-            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C"
+          D=$(jq -e -r '.version' plugins/pr-review-toolkit/.grok-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"; exit 1; }
+          E=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"; exit 1; }
+          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ]; then
+            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C D=$D E=$E"
             exit 1
           fi
-          echo "✓ All three manifests at $NEW_VERSION"
+          echo "✓ All five manifests at $NEW_VERSION"
 
       - name: Commit and push
         env:
@@ -138,7 +142,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json CHANGELOG.md
+          git add \
+            .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.codex-plugin/plugin.json \
+            plugins/pr-review-toolkit/.grok-plugin/plugin.json \
+            .grok-plugin/marketplace.json \
+            CHANGELOG.md
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
 
