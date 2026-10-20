@@ -5,7 +5,7 @@
 **Primary goals:**
 
 1. Let Antigravity (`agy`) install and run the six-agent PR review workflow (`agy-review-pass`, `pr-review-and-document`, `gemini-review-integrator`, `pr-review-resolver`, `agy-fix-worker`) with the six packaged review agents.
-2. Support both **GitHub Release Marketplace** installation (`agy plugin install pr-review-toolkit@marxbiotech`) and **local packaged directory** installation (`agy plugin install ./plugins/pr-review-toolkit`).
+2. Support **direct GitHub URL** installation (`agy plugin install https://github.com/marxbiotech/pr-review-toolkit/tree/main/plugins/pr-review-toolkit`), **local packaged directory** installation (`agy plugin install ./plugins/pr-review-toolkit`), and **GitHub Release Marketplace** installation (`agy plugin install pr-review-toolkit@marxbiotech`).
 3. Keep the existing `.pr-review-cache/pr-{PR_NUMBER}.json` and `<!-- pr-review-metadata ... -->` GitHub PR comment as the single source of truth across Claude, Gemini, Codex, Grok, and Antigravity (`AGY`).
 4. Ensure `agy plugin validate --strict ./plugins/pr-review-toolkit` passes with zero errors and zero warnings.
 
@@ -80,7 +80,7 @@ During `.github/workflows/release.yml`, CI automatically:
 3. Generates `marketplace.json` from `.antigravity-plugin/marketplace.json` with the release version, download URL, and SHA-256.
 4. Uploads both `pr-review-toolkit-agy.zip` and `marketplace.json` as GitHub Release assets.
 
-Users register `https://github.com/marxbiotech/pr-review-toolkit/releases/latest/download/marketplace.json` in `~/.gemini/config/config.json` under `agy-plugin-marketplaces` and install via `agy plugin install pr-review-toolkit@marxbiotech`.
+Users can install directly via GitHub URL (`agy plugin install https://github.com/marxbiotech/pr-review-toolkit/tree/main/plugins/pr-review-toolkit`), from a local clone (`agy plugin install ./plugins/pr-review-toolkit`), or via `agy plugin install pr-review-toolkit@marxbiotech` when the `agy-plugin-marketplaces` Mendel flag includes `marxbiotech=https://github.com/marxbiotech/pr-review-toolkit/releases/latest/download/marketplace.json`. Upon installation, `agy` copies the plugin into `~/.gemini/config/plugins/pr-review-toolkit` and records `"plugins": { "pr-review-toolkit": { "enabled": true } }` in `~/.gemini/config/config.json`.
 
 ---
 

@@ -147,23 +147,15 @@ This repository includes an Antigravity (`agy`) plugin packaged under `plugins/p
 | **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
 | **agy-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
 
-#### Install via GitHub Release Marketplace (Recommended)
+#### Install Directly from GitHub URL (Recommended)
 
-Each GitHub Release publishes `pr-review-toolkit-agy.zip` and `marketplace.json` (with the archive's SHA-256). Register the marketplace URL in `~/.gemini/config/config.json`:
-
-```json
-{
-  "agy-plugin-marketplaces": "marxbiotech=https://github.com/marxbiotech/pr-review-toolkit/releases/latest/download/marketplace.json"
-}
-```
-
-Then install via `agy`:
+`agy plugin install` supports GitHub repository URLs with a branch and subpath directly, cloning and installing `plugins/pr-review-toolkit` into `~/.gemini/config/plugins/pr-review-toolkit` and enabling it in `~/.gemini/config/config.json`:
 
 ```bash
-agy plugin install pr-review-toolkit@marxbiotech
+agy plugin install https://github.com/marxbiotech/pr-review-toolkit/tree/main/plugins/pr-review-toolkit
 ```
 
-#### Install from Source Clone
+#### Install from Local Source Clone
 
 Do not run `agy plugin install .` at the repository root (that converts the root Claude plugin `pr-workflow`). Point `agy` at `./plugins/pr-review-toolkit`:
 
@@ -172,6 +164,14 @@ git clone https://github.com/marxbiotech/pr-review-toolkit.git
 cd pr-review-toolkit
 agy plugin validate --strict ./plugins/pr-review-toolkit
 agy plugin install ./plugins/pr-review-toolkit
+```
+
+#### Install via GitHub Release Marketplace
+
+Each GitHub Release also publishes `pr-review-toolkit-agy.zip` and `marketplace.json` (with the archive's SHA-256). When the `agy-plugin-marketplaces` Mendel flag includes `marxbiotech=https://github.com/marxbiotech/pr-review-toolkit/releases/latest/download/marketplace.json`, you can install via:
+
+```bash
+agy plugin install pr-review-toolkit@marxbiotech
 ```
 
 See [`docs/agy-integration-design.md`](docs/agy-integration-design.md) for the full Antigravity architecture and contract.
