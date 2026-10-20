@@ -1,7 +1,8 @@
 ---
+name: push-review-cache
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/cache-write-comment.sh *)
 description: 將本地快取的 PR review comment 重新同步至 GitHub。用於 GitHub 同步失敗後的 recovery，或手動推送本地變更。
-argument-hint: [PR_NUMBER] [force]
+argument-hint: "[PR_NUMBER] [force]"
 ---
 
 # Push Review Cache to GitHub

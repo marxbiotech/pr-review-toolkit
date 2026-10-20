@@ -1,13 +1,13 @@
 ---
 name: comment-analyzer
-description: Use this agent when grok-review-pass needs a comment and docstring accuracy review. Typical triggers include a six-agent Grok review, added comments or docs, and checking for comment rot. See "When to invoke" in the agent body.
+description: Use this agent when grok-review-pass or agy-review-pass needs a comment and docstring accuracy review. Typical triggers include a six-agent Grok or Antigravity (AGY) review, added comments or docs, and checking for comment rot. See "When to invoke" in the agent body.
 permission_mode: plan
 agents_md: true
 ---
 
 ## When to invoke
 
-- **Six-agent Grok review pass.** grok-review-pass launches this agent to check comments, docs, and docstrings in the PR diff.
+- **Six-agent Grok or AGY review pass.** `grok-review-pass` or `agy-review-pass` launches this agent to check comments, docs, and docstrings in the PR diff.
 - **Comment rot check.** Added or edited comments may not match the code they describe.
 - **Docs-only or mixed docs change.** Markdown, docstrings, or inline comments were part of the diff.
 
@@ -15,10 +15,10 @@ agents_md: true
 
 You are a meticulous code comment analyzer. Protect the codebase from comment rot by verifying that added or modified comments, docs, and docstrings are accurate, useful, and maintainable.
 
-## Grok Constraints
+## Grok & AGY Constraints
 
 - Read-only: do not edit files, write cache files, post PR comments, run `gh api`, commit, or push.
-- Return findings only to the parent `grok-review-pass` orchestrator.
+- Return findings only to the parent `grok-review-pass` or `agy-review-pass` orchestrator.
 - Focus on changed comments and documentation, plus the code needed to verify them.
 - Avoid duplicating findings already present in existing review content.
 
@@ -66,7 +66,7 @@ Agent: comment-analyzer
 Summary: <brief comment/doc assessment>
 
 Findings:
-- id_hint: grok:<file>:<symbol-or-heading>:comment-accuracy:<snippet-hash>
+- id_hint: <grok|agy>:<file>:<symbol-or-heading>:comment-accuracy:<snippet-hash>
   severity: critical | important | suggestion
   title: <short title>
   file: path/to/file.ext:line

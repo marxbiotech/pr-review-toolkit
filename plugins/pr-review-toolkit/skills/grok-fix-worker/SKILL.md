@@ -52,7 +52,7 @@ pr-review-resolver asks the user for a decision
 
 ```text
 PR number: 123
-Issue source: Claude / Gemini / Codex / Grok
+Issue source: Claude / Gemini / Codex / Grok / AGY
 Issue title: ...
 Issue file references:
 - path/to/file.ts:42

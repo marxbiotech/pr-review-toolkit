@@ -35,6 +35,12 @@
       "last_reviewed_at": "2026-05-01T01:15:00Z",
       "posted_finding_ids": ["grok:src/example.ts:fn:bug:ef01"],
       "agents_run": ["code-reviewer", "silent-failure-hunter"]
+    },
+    "agy": {
+      "last_reviewed_head": "jkl",
+      "last_reviewed_at": "2026-05-01T01:30:00Z",
+      "posted_finding_ids": ["agy:src/example.ts:fn:bug:2345"],
+      "agents_run": ["code-reviewer", "pr-test-analyzer"]
     }
   }
 }

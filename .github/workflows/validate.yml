@@ -23,6 +23,8 @@ jobs:
           jq empty .agents/plugins/marketplace.json
           jq empty plugins/pr-review-toolkit/.grok-plugin/plugin.json
           jq empty .grok-plugin/marketplace.json
+          jq empty plugins/pr-review-toolkit/.antigravity-plugin/plugin.json
+          jq empty .antigravity-plugin/marketplace.json
           echo "✅ JSON syntax is valid"
 
       - name: Validate required files exist
@@ -30,7 +32,7 @@ jobs:
           set -euo pipefail
           echo "Checking required files..."
           # Hardcoded list of stable required files (manifests + repo conventions).
-          # Codex and Grok skill files are validated dynamically in later
+          # Codex, Grok, and AGY skill files are validated dynamically in later
           # steps — adding a new skill does not require updating this list.
           required_files=(
             ".claude-plugin/plugin.json"
@@ -39,6 +41,8 @@ jobs:
             ".agents/plugins/marketplace.json"
             "plugins/pr-review-toolkit/.grok-plugin/plugin.json"
             ".grok-plugin/marketplace.json"
+            "plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            ".antigravity-plugin/marketplace.json"
             "README.md"
             "LICENSE"
           )
@@ -99,6 +103,14 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"
             exit 1
           }
+          AGY_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -133,6 +145,18 @@ jobs:
           fi
           echo "✅ .grok-plugin/marketplace.json plugins[0].version: $GROK_MARKETPLACE_PLUGIN_VERSION"
 
+          if [[ ! "$AGY_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in plugins/pr-review-toolkit/.antigravity-plugin/plugin.json: $AGY_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ plugins/pr-review-toolkit/.antigravity-plugin/plugin.json version: $AGY_PLUGIN_VERSION"
+
+          if [[ ! "$AGY_MARKETPLACE_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in .antigravity-plugin/marketplace.json plugins[0].version: $AGY_MARKETPLACE_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ .antigravity-plugin/marketplace.json plugins[0].version: $AGY_MARKETPLACE_PLUGIN_VERSION"
+
       - name: Validate version consistency
         run: |
           set -euo pipefail
@@ -155,6 +179,14 @@ jobs:
           }
           GROK_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"
+            exit 1
+          }
+          AGY_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"
             exit 1
           }
 
@@ -191,6 +223,24 @@ jobs:
             echo "   .grok-plugin/marketplace.json plugins: $GROK_MARKETPLACE_PLUGIN_VERSION"
             echo ""
             echo "Claude and Grok marketplace plugin versions must match."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$AGY_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   plugins/pr-review-toolkit/.antigravity-plugin/plugin.json:  $AGY_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Antigravity (AGY) plugin manifests must ship the same plugin version."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$AGY_MARKETPLACE_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   .antigravity-plugin/marketplace.json plugins: $AGY_MARKETPLACE_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Antigravity (AGY) marketplace plugin versions must match."
             exit 1
           fi
 
@@ -359,6 +409,63 @@ jobs:
             exit 1
           fi
 
+          AGY_PLUGIN_NAME=$(jq -e -r '.name' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          }
+          AGY_PLUGIN_DESC=$(jq -e -r '.description' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_TYPE=$(jq -e -r '.plugins[0].source.type' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.type from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_URL=$(jq -e -r '.plugins[0].source.url' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.url from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
+          AGY_MARKETPLACE_SHA256=$(jq -e -r '.plugins[0].source.sha256' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.sha256 from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
+
+          if [ -z "$AGY_PLUGIN_NAME" ] || [ "$AGY_PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$AGY_PLUGIN_DESC" ] || [ "$AGY_PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ "$AGY_MARKETPLACE_NAME" != "$AGY_PLUGIN_NAME" ]; then
+            echo "❌ AGY marketplace plugin name must match plugins/pr-review-toolkit/.antigravity-plugin/plugin.json name"
+            echo "   marketplace: $AGY_MARKETPLACE_NAME"
+            echo "   plugin.json: $AGY_PLUGIN_NAME"
+            exit 1
+          fi
+
+          if [ "$AGY_MARKETPLACE_TYPE" != "archive" ]; then
+            echo "❌ AGY marketplace source.type must be 'archive', got: $AGY_MARKETPLACE_TYPE"
+            exit 1
+          fi
+
+          if [[ ! "$AGY_MARKETPLACE_URL" =~ ^https://.*/releases/download/v[0-9]+\.[0-9]+\.[0-9]+.*/pr-review-toolkit-agy\.zip$ ]]; then
+            echo "❌ AGY marketplace source.url must be an https release zip URL, got: $AGY_MARKETPLACE_URL"
+            exit 1
+          fi
+
+          if [[ ! "$AGY_MARKETPLACE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "❌ AGY marketplace source.sha256 must be a 64-char lowercase hex SHA-256, got: $AGY_MARKETPLACE_SHA256"
+            exit 1
+          fi
+
           echo "✅ Codex plugin name: $CODEX_PLUGIN_NAME"
           echo "✅ Codex plugin description: $CODEX_PLUGIN_DESC"
           echo "✅ Codex skills path: $CODEX_SKILLS_PATH"
@@ -366,6 +473,9 @@ jobs:
           echo "✅ Grok plugin name: $GROK_PLUGIN_NAME"
           echo "✅ Grok plugin description: $GROK_PLUGIN_DESC"
           echo "✅ Grok marketplace entry: $GROK_MARKETPLACE_NAME -> $GROK_MARKETPLACE_PATH"
+          echo "✅ AGY plugin name: $AGY_PLUGIN_NAME"
+          echo "✅ AGY plugin description: $AGY_PLUGIN_DESC"
+          echo "✅ AGY marketplace entry: $AGY_MARKETPLACE_NAME -> $AGY_MARKETPLACE_URL"
 
       - name: Check script parity
         uses: ./.github/actions/check-script-parity
@@ -679,6 +789,22 @@ jobs:
             exit 1
           fi
           echo "✅ grok-fix-worker SKILL.md does not call review-state scripts"
+
+      - name: Lock agy-fix-worker resolver-managed contract
+        run: |
+          set -euo pipefail
+          worker_skill="plugins/pr-review-toolkit/skills/agy-fix-worker/SKILL.md"
+
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|cache-cleanup|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+
+          if awk '
+              /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
+              in_fence { print }
+            ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. agy-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, cache-cleanup, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            exit 1
+          fi
+          echo "✅ agy-fix-worker SKILL.md does not call review-state scripts"
 
       - name: Reject PR-round identifiers in source
         # Delegated to scripts/check-pr-round-identifiers.sh so the lint

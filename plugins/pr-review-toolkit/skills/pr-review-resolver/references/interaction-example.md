@@ -1,11 +1,11 @@
 # pr-review-resolver Interaction Example
 
-Use this as the interaction model for Grok. The resolver speaks Traditional Chinese, discusses one issue at a time, and only dispatches fix work after the user decides.
+Use this as the interaction model for Antigravity (`agy`) and Grok. The resolver speaks Traditional Chinese, discusses one issue at a time, and only dispatches fix work after the user decides.
 
 ## Start
 
 ```text
-Grok: 我找到 3 個尚未解決的 review 項目。我會逐一處理；每一項都會先確認原始碼狀態，再由你決定修復、延後、標記 N/A，或暫時跳過。
+Agent: 我找到 3 個尚未解決的 review 項目。我會逐一處理；每一項都會先確認原始碼狀態，再由你決定修復、延後、標記 N/A，或暫時跳過。
 ```
 
 ## Present One Issue
@@ -13,7 +13,7 @@ Grok: 我找到 3 個尚未解決的 review 項目。我會逐一處理；每一
 ```text
 問題 1/3：Silent Cart Quantity Fetch Failure
 
-來源：Grok
+來源：AGY / Grok
 位置：apps/client/src/lib/context/cart-drawer-context.tsx:59
 狀態：仍需處理
 

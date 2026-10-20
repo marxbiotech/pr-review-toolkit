@@ -56,13 +56,19 @@ jobs:
             ".claude-plugin/marketplace.json:.plugins[0].version" \
             "plugins/pr-review-toolkit/.codex-plugin/plugin.json:.version" \
             "plugins/pr-review-toolkit/.grok-plugin/plugin.json:.version" \
-            ".grok-plugin/marketplace.json:.plugins[0].version"; do
+            ".grok-plugin/marketplace.json:.plugins[0].version" \
+            "plugins/pr-review-toolkit/.antigravity-plugin/plugin.json:.version" \
+            ".antigravity-plugin/marketplace.json:.plugins[0].version"; do
             file="${spec%%:*}"
             path="${spec#*:}"
             tmp=$(mktemp)
             jq --arg v "$NEW_VERSION" "$path = \$v" "$file" > "$tmp"
             mv "$tmp" "$file"
           done
+          tmp=$(mktemp)
+          jq --arg url "https://github.com/marxbiotech/pr-review-toolkit/releases/download/v${NEW_VERSION}/pr-review-toolkit-agy.zip" \
+            '.plugins[0].source.url = $url' .antigravity-plugin/marketplace.json > "$tmp"
+          mv "$tmp" .antigravity-plugin/marketplace.json
 
       - name: Update CHANGELOG.md
         env:
@@ -128,11 +134,15 @@ jobs:
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"; exit 1; }
           E=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"; exit 1; }
-          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ]; then
-            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C D=$D E=$E"
+          F=$(jq -e -r '.version' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"; exit 1; }
+          G=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"; exit 1; }
+          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ]; then
+            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C D=$D E=$E F=$F G=$G"
             exit 1
           fi
-          echo "✓ All five manifests at $NEW_VERSION"
+          echo "✓ All seven manifests at $NEW_VERSION"
 
       - name: Commit and push
         env:
@@ -148,6 +158,8 @@ jobs:
             plugins/pr-review-toolkit/.codex-plugin/plugin.json \
             plugins/pr-review-toolkit/.grok-plugin/plugin.json \
             .grok-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
+            .antigravity-plugin/marketplace.json \
             CHANGELOG.md
           git commit -m "chore: bump version to $NEW_VERSION"
           git push

@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/github/v/release/marxbiotech/pr-review-toolkit?label=version)](https://github.com/marxbiotech/pr-review-toolkit/releases)
 [![License](https://img.shields.io/github/license/marxbiotech/pr-review-toolkit)](LICENSE)
 
-A Claude Code plugin for comprehensive PR review workflow, with companion Codex and Grok packaging: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
+A Claude Code plugin for comprehensive PR review workflow, with companion Codex, Grok, and Antigravity (`agy`) packaging: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
 
 > **Latest:** See [CHANGELOG.md](CHANGELOG.md) for release notes | [Releases](https://github.com/marxbiotech/pr-review-toolkit/releases) for downloads
 
@@ -134,6 +134,47 @@ export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolk
 ```
 
 Grok review is split the same way as Codex. `grok-review-pass` is read-only: it launches the six review subagents and returns a normalized bundle. `pr-review-and-document` owns review publishing. `pr-review-resolver` is the interactive decision coordinator. `grok-fix-worker` is resolver-managed only. See [`docs/grok-integration-design.md`](docs/grok-integration-design.md).
+
+### Antigravity (`agy`) Plugin / Skills
+
+This repository includes an Antigravity (`agy`) plugin packaged under `plugins/pr-review-toolkit/` (manifest at `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json`, skills at `plugins/pr-review-toolkit/skills/`, review agents at `plugins/pr-review-toolkit/agents/`, and helper scripts under `plugins/pr-review-toolkit/scripts/`), plus a release marketplace template at `.antigravity-plugin/marketplace.json`:
+
+| Skill | Description |
+|-------|-------------|
+| **agy-review-pass** | Run six read-only Antigravity review subagents in parallel and return one deduplicated review bundle |
+| **pr-review-and-document** | Publish the Antigravity review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
+| **gemini-review-integrator** | Integrate Gemini Code Assist inline comments into the canonical PR review comment |
+| **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
+| **agy-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
+
+#### Install via GitHub Release Marketplace (Recommended)
+
+Each GitHub Release publishes `pr-review-toolkit-agy.zip` and `marketplace.json` (with the archive's SHA-256). Register the marketplace URL in `~/.gemini/config/config.json`:
+
+```json
+{
+  "agy-plugin-marketplaces": "marxbiotech=https://github.com/marxbiotech/pr-review-toolkit/releases/latest/download/marketplace.json"
+}
+```
+
+Then install via `agy`:
+
+```bash
+agy plugin install pr-review-toolkit@marxbiotech
+```
+
+#### Install from Source Clone
+
+Do not run `agy plugin install .` at the repository root (that converts the root Claude plugin `pr-workflow`). Point `agy` at `./plugins/pr-review-toolkit`:
+
+```bash
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
+cd pr-review-toolkit
+agy plugin validate --strict ./plugins/pr-review-toolkit
+agy plugin install ./plugins/pr-review-toolkit
+```
+
+See [`docs/agy-integration-design.md`](docs/agy-integration-design.md) for the full Antigravity architecture and contract.
 
 ## Usage
 
@@ -285,6 +326,24 @@ graph LR
 ```
 
 The four Grok skills map to the same role boundaries as Codex (`grok-review-pass` producer, `pr-review-and-document` publisher, `pr-review-resolver` resolver, `grok-fix-worker` worker). See [`docs/grok-integration-design.md`](docs/grok-integration-design.md).
+
+### Antigravity (`agy`) flow
+
+```mermaid
+graph LR
+    A[Create PR] --> B[agy-review-pass]
+    B --> C[pr-review-and-document]
+    C --> D{Gemini reviewed?}
+    D -->|Yes| E[gemini-review-integrator]
+    D -->|No| F[pr-review-resolver]
+    E --> F
+    F -->|user picks Fix| G[agy-fix-worker]
+    G --> F
+    F --> H[Issues Resolved]
+    H --> I[Merge PR]
+```
+
+The five Antigravity skills map to the same role boundaries (`agy-review-pass` producer, `pr-review-and-document` publisher, `gemini-review-integrator` integrator, `pr-review-resolver` resolver, `agy-fix-worker` worker). See [`docs/agy-integration-design.md`](docs/agy-integration-design.md).
 
 ## PR Comment Structure
 

@@ -93,7 +93,7 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
 4. Parse unresolved items from the review content.
 5. For each unresolved issue, one at a time:
    - Present the issue in Traditional Chinese.
-   - Show source (`Claude`, `Gemini`, `Codex`, or `Grok`), title, file references, problem, and fix suggestion.
+   - Show source (`Claude`, `Gemini`, `Codex`, `Grok`, or `AGY`), title, file references, problem, and fix suggestion.
    - Read the referenced source files and verify whether the issue still exists.
    - Explain available options in Traditional Chinese.
    - Ask the user to choose: Fix, Deferred, N/A, or Skip for now.
@@ -169,7 +169,7 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
    **Rename note:** the helper passes `--no-renames` to git, so `git mv a.txt b.txt` appears as deletion of `a.txt` + addition of `b.txt`. If a worker is expected to perform a rename, its `OWNED_FILES` declaration must include both endpoints.
 
 10. Update the canonical review comment:
-    - Preserve all existing Claude, Gemini, Codex, and Grok issue sections.
+    - Preserve all existing Claude, Gemini, Codex, Grok, and AGY issue sections.
     - Preserve all issue text except the specific status/fix summary for resolved items.
     - Treat untagged issues as Claude issues.
     - Keep `review_round` unchanged.
@@ -231,7 +231,7 @@ Before beginning the interactive loop, read `references/interaction-example.md`.
 Treat these as unresolved:
 
 - Details summaries or issue headings with `⚠️` or `🔴`.
-- `[Codex]`, `[Gemini]`, or `[Grok]` issues with `⚠️` or `🔴`.
+- `[Codex]`, `[Gemini]`, `[Grok]`, or `[AGY]` issues with `⚠️` or `🔴`.
 - Table rows with `⚠️ Pending`.
 - Details summaries without `✅` or `⏭️`.
 - Action Plan items with unchecked `[ ]`.
@@ -247,6 +247,7 @@ Source rules:
 - `[Codex]` means Codex review pass.
 - `[Gemini]` means Gemini Code Assist integration.
 - `[Grok]` means Grok review pass.
+- `[AGY]` means Antigravity (`agy`) review pass.
 - No source prefix means Claude for backward compatibility.
 
 ## User Interaction Requirements
@@ -256,7 +257,7 @@ For each issue, use this shape in Traditional Chinese:
 ```text
 問題 X/Y：<title>
 
-來源：Codex / Gemini / Claude / Grok
+來源：Codex / Gemini / Claude / Grok / AGY
 位置：path/to/file.ts:42
 狀態：仍需處理 / 可能已修復 / 需要確認
 
@@ -282,8 +283,8 @@ The resolver remains responsible for the user-facing discussion, conflict coordi
 
 - Use `cache-write-comment.sh`; never use `gh api` directly.
 - Do not use `--local-only`.
-- Preserve `review_sources` for Claude, Gemini, Codex, and Grok.
-- Preserve `[Codex]`, `[Gemini]`, and `[Grok]` labels.
+- Preserve `review_sources` for Claude, Gemini, Codex, Grok, and AGY.
+- Preserve `[Codex]`, `[Gemini]`, `[Grok]`, and `[AGY]` labels.
 - Keep existing `review_round` unchanged.
 - Update summary counters so totals/fixed/remaining match canonical sections.
 - Add a concise resolver note only when it clarifies a user decision or validation result.

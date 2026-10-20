@@ -7,6 +7,7 @@ on:
       - '.claude-plugin/plugin.json'
       - 'plugins/pr-review-toolkit/.codex-plugin/plugin.json'
       - 'plugins/pr-review-toolkit/.grok-plugin/plugin.json'
+      - 'plugins/pr-review-toolkit/.antigravity-plugin/plugin.json'
 
 jobs:
   release:
@@ -32,16 +33,22 @@ jobs:
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.grok-plugin/plugin.json"; exit 1; }
           E=$(jq -e -r '.plugins[0].version' .grok-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .grok-plugin/marketplace.json"; exit 1; }
-          if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ]; then
+          F=$(jq -e -r '.version' plugins/pr-review-toolkit/.antigravity-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"; exit 1; }
+          G=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"; exit 1; }
+          if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ]; then
             echo "::error::Refusing to tag: version drift across manifests"
-            echo "  .claude-plugin/plugin.json:        $A"
-            echo "  .claude-plugin/marketplace.json:   $B"
+            echo "  .claude-plugin/plugin.json:                                  $A"
+            echo "  .claude-plugin/marketplace.json:                             $B"
             echo "  plugins/pr-review-toolkit/.codex-plugin/plugin.json:         $C"
             echo "  plugins/pr-review-toolkit/.grok-plugin/plugin.json:          $D"
-            echo "  .grok-plugin/marketplace.json:     $E"
+            echo "  .grok-plugin/marketplace.json:                               $E"
+            echo "  plugins/pr-review-toolkit/.antigravity-plugin/plugin.json:   $F"
+            echo "  .antigravity-plugin/marketplace.json:                        $G"
             exit 1
           fi
-          echo "✓ All five manifests at $A"
+          echo "✓ All seven manifests at $A"
 
       - name: Verify release artifacts
         run: |
@@ -52,7 +59,9 @@ jobs:
             plugins/pr-review-toolkit/.codex-plugin/plugin.json \
             .agents/plugins/marketplace.json \
             plugins/pr-review-toolkit/.grok-plugin/plugin.json \
-            .grok-plugin/marketplace.json
+            .grok-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
+            .antigravity-plugin/marketplace.json
 
           # Keep this manifest list in sync with validate.yml's required_files
           # and JSON syntax checks when adding packaging metadata files.
@@ -62,7 +71,9 @@ jobs:
             plugins/pr-review-toolkit/.codex-plugin/plugin.json \
             .agents/plugins/marketplace.json \
             plugins/pr-review-toolkit/.grok-plugin/plugin.json \
-            .grok-plugin/marketplace.json; do
+            .grok-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
+            .antigravity-plugin/marketplace.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Release blocked: missing artifact $f at HEAD"
               exit 1
@@ -195,12 +206,31 @@ jobs:
           echo "/plugin install pr-review-toolkit" >> release_notes.md
           echo '```' >> release_notes.md
           echo "" >> release_notes.md
-          echo "For Codex, this release includes a source plugin manifest at \`plugins/pr-review-toolkit/.codex-plugin/plugin.json\`, skills under \`plugins/pr-review-toolkit/codex/skills/\`, and helper scripts under \`plugins/pr-review-toolkit/scripts/\`." >> release_notes.md
+          echo "For Codex, Grok, and Antigravity (AGY), this release includes packaged manifests under \`plugins/pr-review-toolkit/\`, plus \`pr-review-toolkit-agy.zip\` and \`marketplace.json\` attached to this release for Antigravity marketplace installation." >> release_notes.md
 
           cat release_notes.md
         env:
           VERSION_VALUE: ${{ steps.version.outputs.version }}
           PREV_TAG_VALUE: ${{ steps.prev_tag.outputs.tag }}
+
+      - name: Build Antigravity release archive and marketplace manifest
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          (cd plugins/pr-review-toolkit && zip -r "$GITHUB_WORKSPACE/pr-review-toolkit-agy.zip" .)
+          SHA256=$(sha256sum pr-review-toolkit-agy.zip | awk '{print $1}')
+          URL="https://github.com/${REPO}/releases/download/v${VERSION}/pr-review-toolkit-agy.zip"
+          jq \
+            --arg v "$VERSION" \
+            --arg url "$URL" \
+            --arg sha "$SHA256" \
+            '.plugins[0].version = $v | .plugins[0].source.url = $url | .plugins[0].source.sha256 = $sha' \
+            .antigravity-plugin/marketplace.json > marketplace.json
+          jq empty marketplace.json
+          echo "✓ Built pr-review-toolkit-agy.zip (sha256=$SHA256) and marketplace.json"
 
       - name: Create tag
         if: steps.check_tag.outputs.exists == 'false'
@@ -222,3 +252,6 @@ jobs:
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            pr-review-toolkit-agy.zip
+            marketplace.json

@@ -1,13 +1,13 @@
 ---
 name: type-design-analyzer
-description: Use this agent when grok-review-pass needs a type-design review of new or changed data models. Typical triggers include a six-agent Grok review, added structs or interfaces, and checking invariants and encapsulation. See "When to invoke" in the agent body.
+description: Use this agent when grok-review-pass or agy-review-pass needs a type-design review of new or changed data models. Typical triggers include a six-agent Grok or Antigravity (AGY) review, added structs or interfaces, and checking invariants and encapsulation. See "When to invoke" in the agent body.
 permission_mode: plan
 agents_md: true
 ---
 
 ## When to invoke
 
-- **Six-agent Grok review pass.** grok-review-pass launches this agent whenever types or data models changed.
+- **Six-agent Grok or AGY review pass.** `grok-review-pass` or `agy-review-pass` launches this agent whenever types or data models changed.
 - **New model added.** A struct, class, interface, or schema was introduced and needs invariant and encapsulation review.
 - **Type-shape change.** Existing types were widened, narrowed, or split and may have lost enforcement.
 
@@ -15,10 +15,10 @@ agents_md: true
 
 You are a type design expert. Analyze new or modified types and data models for invariant strength, encapsulation, clarity, and practical usefulness.
 
-## Grok Constraints
+## Grok & AGY Constraints
 
 - Read-only: do not edit files, write cache files, post PR comments, run `gh api`, commit, or push.
-- Return findings only to the parent `grok-review-pass` orchestrator.
+- Return findings only to the parent `grok-review-pass` or `agy-review-pass` orchestrator.
 - Focus on changed types and directly related constructors, validators, factories, and mutation points.
 - Avoid duplicating findings already present in existing review content.
 
@@ -93,7 +93,7 @@ Type ratings:
     - <optional>
 
 Findings:
-- id_hint: grok:<file>:<type-name>:type-design:<snippet-hash>
+- id_hint: <grok|agy>:<file>:<type-name>:type-design:<snippet-hash>
   severity: critical | important | suggestion
   title: <short title>
   file: path/to/file.ext:line
