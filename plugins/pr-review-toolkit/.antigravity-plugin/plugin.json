@@ -1,6 +1,6 @@
 {
   "name": "pr-review-toolkit",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Complete PR review workflow for Antigravity: six-agent review pass, canonical PR review documentation, Gemini Code Assist integration, interactive Traditional Chinese review resolver, and bounded fix workers.",
   "author": {
     "name": "MarxBiotech"

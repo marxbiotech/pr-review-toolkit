@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-20
+
+Antigravity (`agy`) is now a first-class review producer alongside Claude, Gemini, Codex, and Grok. This major release ships native Antigravity plugin and GitHub Release marketplace packaging, Antigravity skills (`agy-review-pass`, `agy-fix-worker`, `gemini-review-integrator`, `pr-review-and-document`, `pr-review-resolver`), and additive `review_sources.agy` metadata so Claude, Gemini, Codex, Grok, and Antigravity can share the same canonical PR comment.
+
+### Added
+
+- Antigravity (`agy`) plugin packaging: `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json` plus `.antigravity-plugin/marketplace.json`, with automated `pr-review-toolkit-agy.zip` and `marketplace.json` (with SHA-256) asset generation in `release.yml`
+- `agy-review-pass` skill: launches six parallel read-only review subagents in Antigravity and returns a deduplicated finding bundle with `agy:` finding IDs
+- `agy-fix-worker` skill: resolver-managed, bounded per-issue fix executor for Antigravity — explicitly forbidden from touching review state
+- Packaged `gemini-review-integrator` skill under `plugins/pr-review-toolkit/skills/` for integrating Gemini Code Assist inline comments in Antigravity and Grok
+- `review_sources.agy` in comment metadata schema 1.1, preserved and normalized by `review-metadata-upgrade.sh`
+- Antigravity integration design doc under `docs/agy-integration-design.md`
+
+### Changed
+
+- Packaged `pr-review-and-document` and `pr-review-resolver` skills and the six review agents under `plugins/pr-review-toolkit/` now support both Antigravity (`AGY_PLUGIN_ROOT`, `[AGY]`, `agy:`) and Grok (`GROK_PLUGIN_ROOT`, `[Grok]`, `grok:`)
+- Claude, Codex, and Grok skills now preserve `[AGY]` findings and `review_sources.agy`
+- `Reviewer Sources` display order is `Claude, Gemini, Codex, Grok, AGY`
+- CI (`validate.yml`, `bump-version.yml`, `release.yml`) enforces version parity across all seven plugin and marketplace manifests and locks the `agy-fix-worker` resolver-managed contract
+- Major version bump (5.0.0) marking the Antigravity (`agy`) full-port milestone
+
 ## [4.0.0] - 2026-09-15
 
 Grok is now a first-class review producer alongside Claude and Codex. This major release ships Grok marketplace packaging, Grok skills, and additive `review_sources.grok` metadata so Claude/Codex/Grok can share the same canonical PR comment.
@@ -175,7 +196,9 @@ This release is major due to:
   - `fetch-gemini-comments.sh`
 - Marketplace configuration for `marxbiotech/pr-review-toolkit`
 
-[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v3.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/marxbiotech/pr-review-toolkit/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v4.0.0...v5.0.0
+[4.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v3.0.0-rc.1...v4.0.0
 [3.0.0-rc.1]: https://github.com/marxbiotech/pr-review-toolkit/compare/v2.0.2...v3.0.0-rc.1
 [2.0.0]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.2...v2.0.0
 [1.4.2]: https://github.com/marxbiotech/pr-review-toolkit/compare/v1.4.1...v1.4.2

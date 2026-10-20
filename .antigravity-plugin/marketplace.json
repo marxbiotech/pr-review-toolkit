@@ -12,11 +12,11 @@
       "name": "pr-review-toolkit",
       "source": {
         "type": "archive",
-        "url": "https://github.com/marxbiotech/pr-review-toolkit/releases/download/v4.0.0/pr-review-toolkit-agy.zip",
+        "url": "https://github.com/marxbiotech/pr-review-toolkit/releases/download/v5.0.0/pr-review-toolkit-agy.zip",
         "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
       },
       "description": "Complete PR review workflow for Antigravity: six-agent review pass, canonical PR review documentation, Gemini Code Assist integration, interactive Traditional Chinese review resolver, and bounded fix workers.",
-      "version": "4.0.0",
+      "version": "5.0.0",
       "author": {
         "name": "MarxBiotech"
       },
