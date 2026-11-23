@@ -117,6 +117,7 @@ jq --arg last_writer "$LAST_WRITER" '
   | ($sources.codex // {}) as $codex
   | ($sources.grok // {}) as $grok
   | ($sources.agy // {}) as $agy
+  | ($sources.muse // {}) as $muse
   | .schema_version = "1.1"
   | .created_by = (.created_by // .skill // (if $last_writer != "" then $last_writer else "unknown" end))
   | .last_writer = (if $last_writer != "" then $last_writer else (.last_writer // .skill // .created_by // "unknown") end)
@@ -148,6 +149,12 @@ jq --arg last_writer "$LAST_WRITER" '
         last_reviewed_at: ($agy.last_reviewed_at // null),
         posted_finding_ids: arr($agy.posted_finding_ids),
         agents_run: arr($agy.agents_run)
+      },
+      muse: {
+        last_reviewed_head: ($muse.last_reviewed_head // null),
+        last_reviewed_at: ($muse.last_reviewed_at // null),
+        posted_finding_ids: arr($muse.posted_finding_ids),
+        agents_run: arr($muse.agents_run)
       }
     }
   | .agents_run = .review_sources.claude.agents_run
