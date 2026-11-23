@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "pr-review-toolkit",
+  "displayName": "PR Review Toolkit",
+  "version": "6.0.0",
+  "description": "PR review workflow skills for Muse: parallel review passes, documented PR comments, Gemini integration, interactive resolution, and resolver-managed bounded fixes.",
+  "compat": {
+    "source": "native",
+    "manifestDir": ".muse-plugin"
+  },
+  "capabilities": {
+    "skills": [
+      {
+        "id": "muse-review-pass",
+        "path": "muse/skills/muse-review-pass/SKILL.md"
+      },
+      {
+        "id": "pr-review-and-document",
+        "path": "muse/skills/pr-review-and-document/SKILL.md"
+      },
+      {
+        "id": "gemini-review-integrator",
+        "path": "muse/skills/gemini-review-integrator/SKILL.md"
+      },
+      {
+        "id": "pr-review-resolver",
+        "path": "muse/skills/pr-review-resolver/SKILL.md"
+      },
+      {
+        "id": "muse-fix-worker",
+        "path": "muse/skills/muse-fix-worker/SKILL.md"
+      }
+    ]
+  }
+}

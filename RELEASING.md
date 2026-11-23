@@ -16,10 +16,11 @@ This document describes how to release new versions of the pr-review-toolkit plu
 | `.grok-plugin/marketplace.json` | `plugins[0].source.path` | Grok marketplace entry (keep as `./plugins/pr-review-toolkit`) |
 | `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json` | `version` | Antigravity (`agy`) plugin version (must match plugin.json) |
 | `.antigravity-plugin/marketplace.json` | `plugins[0].version` | Antigravity (`agy`) marketplace plugin version (must match plugin.json) |
+| `plugins/pr-review-toolkit/.muse-plugin/plugin.json` | `version` | Muse plugin version (must match plugin.json) |
 
-> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, `.grok-plugin/marketplace.json` plugins[0].version, `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json`, and `.antigravity-plugin/marketplace.json` plugins[0].version must always use the same plugin version.
+> **Important:** `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` plugins[0].version, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, `.grok-plugin/marketplace.json` plugins[0].version, `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json`, `.antigravity-plugin/marketplace.json` plugins[0].version, and `plugins/pr-review-toolkit/.muse-plugin/plugin.json` must always use the same plugin version.
 
-> **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex and Grok plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. The ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
+> **Plugin naming:** The Claude plugin name `pr-workflow` is preserved for marketplace-install backwards compatibility (existing users have it pinned by name); the Codex, Grok, Antigravity, and Muse plugin name `pr-review-toolkit` aligns with the repo name and is the canonical project identifier going forward. The ecosystems intentionally use different `name` values — the cross-manifest invariant the release flow enforces is `.version` parity, not `.name` parity.
 
 ## Semantic Versioning
 
@@ -49,7 +50,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 3. Click **Run workflow**
 
 The workflow will:
-- Update version in `plugin.json`, `marketplace.json`, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, `.grok-plugin/marketplace.json`, `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json`, and `.antigravity-plugin/marketplace.json`
+- Update version in `plugin.json`, `marketplace.json`, `plugins/pr-review-toolkit/.codex-plugin/plugin.json`, `plugins/pr-review-toolkit/.grok-plugin/plugin.json`, `.grok-plugin/marketplace.json`, `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json`, `.antigravity-plugin/marketplace.json`, and `plugins/pr-review-toolkit/.muse-plugin/plugin.json`
 - Update `CHANGELOG.md`
 - Commit and push to main
 - Trigger the release workflow automatically
@@ -67,13 +68,14 @@ Use Method A when possible. If you must release manually, make the change in a P
    # Edit .grok-plugin/marketplace.json (plugins[0].version only)
    # Edit plugins/pr-review-toolkit/.antigravity-plugin/plugin.json
    # Edit .antigravity-plugin/marketplace.json (plugins[0].version and plugins[0].source.url)
+   # Edit plugins/pr-review-toolkit/.muse-plugin/plugin.json
    ```
 
 2. Update `CHANGELOG.md`:
    - Add a new section under `## [Unreleased]`
    - Follow [Keep a Changelog](https://keepachangelog.com/) format
 
-3. Verify all seven versions match before committing:
+3. Verify all eight versions match before committing:
    ```bash
    set -euo pipefail
    A=$(jq -e -r '.version' .claude-plugin/plugin.json) || {
@@ -90,19 +92,21 @@ Use Method A when possible. If you must release manually, make the change in a P
      echo "Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"; exit 1; }
    G=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
      echo "Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"; exit 1; }
-   if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ]; then
-     echo "Version mismatch: A=$A B=$B C=$C D=$D E=$E F=$F G=$G"
+   H=$(jq -e -r '.version' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+     echo "Failed to read .version from plugins/pr-review-toolkit/.muse-plugin/plugin.json"; exit 1; }
+   if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ] || [ "$A" != "$H" ]; then
+     echo "Version mismatch: A=$A B=$B C=$C D=$D E=$E F=$F G=$G H=$H"
      echo "Restore parity before committing — partial bumps trigger release.yml without CI gating."
      exit 1
    fi
-   echo "✓ All seven at $A"
+   echo "✓ All eight at $A"
    ```
 
    **Run this command before `git commit`.** If it fails, fix the missing manifest and re-run. CI on main (`validate.yml` push trigger) will also catch drift, but local verification is faster and prevents a known-bad commit from reaching origin.
 
 4. Commit and push:
    ```bash
-   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json plugins/pr-review-toolkit/.grok-plugin/plugin.json .grok-plugin/marketplace.json plugins/pr-review-toolkit/.antigravity-plugin/plugin.json .antigravity-plugin/marketplace.json CHANGELOG.md
+   git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json plugins/pr-review-toolkit/.grok-plugin/plugin.json .grok-plugin/marketplace.json plugins/pr-review-toolkit/.antigravity-plugin/plugin.json .antigravity-plugin/marketplace.json plugins/pr-review-toolkit/.muse-plugin/plugin.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
    git push
    ```
@@ -120,7 +124,7 @@ Runs on every PR to main:
 - Checks semver format
 - Ensures version consistency between Claude and Codex plugin files
 - Verifies required files exist
-- Verifies Codex marketplace metadata, skill frontmatter, and toolkit-root contract
+- Verifies Codex, Grok, Antigravity, and Muse marketplace metadata, skill frontmatter, and toolkit-root contract
 
 ### release.yml (Auto Release)
 
@@ -160,6 +164,7 @@ Update all plugin manifests to have matching versions:
 - `.grok-plugin/marketplace.json` → `plugins[0].version`
 - `plugins/pr-review-toolkit/.antigravity-plugin/plugin.json` → `version`
 - `.antigravity-plugin/marketplace.json` → `plugins[0].version`
+- `plugins/pr-review-toolkit/.muse-plugin/plugin.json` → `version`
 
 ### Manual tag creation
 
@@ -187,4 +192,11 @@ After a release:
    jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.codex-plugin/plugin.json
    test "$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)" = "./plugins/pr-review-toolkit"
    test "$(jq -r '.skills' plugins/pr-review-toolkit/.codex-plugin/plugin.json)" = "./codex/skills/"
+   ```
+5. Verify the Muse manifest, marketplace catalog, and skills:
+   ```bash
+   jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.muse-plugin/plugin.json
+   test "$(jq -r '.plugins[0].source.path' .agents/plugins/marketplace.json)" = "./plugins/pr-review-toolkit"
+   muse plugins validate plugins/pr-review-toolkit
+   muse skills validate plugins/pr-review-toolkit/muse/skills/pr-review-and-document
    ```

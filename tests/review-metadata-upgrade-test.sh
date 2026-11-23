@@ -61,6 +61,10 @@ assert_jq "$legacy" '.review_sources.agy.posted_finding_ids | type' 'array'
 assert_jq "$legacy" '.review_sources.agy.posted_finding_ids | length' '0'
 assert_jq "$legacy" '.review_sources.agy.agents_run | type' 'array'
 assert_jq "$legacy" '.review_sources.agy.agents_run | length' '0'
+assert_jq "$legacy" '.review_sources.muse.posted_finding_ids | type' 'array'
+assert_jq "$legacy" '.review_sources.muse.posted_finding_ids | length' '0'
+assert_jq "$legacy" '.review_sources.muse.agents_run | type' 'array'
+assert_jq "$legacy" '.review_sources.muse.agents_run | length' '0'
 # Phase-2 dual-write contract: top-level agents_run must mirror nested.
 assert_jq "$legacy" '.agents_run | join(",")' 'code-reviewer,pr-test-analyzer'
 assert_jq "$legacy" '(.agents_run == .review_sources.claude.agents_run)' 'true'
@@ -270,8 +274,44 @@ assert_jq "$bootstrap" '.review_sources.agy.posted_finding_ids | type' 'array'
 assert_jq "$bootstrap" '.review_sources.agy.posted_finding_ids | length' '0'
 assert_jq "$bootstrap" '.review_sources.agy.agents_run | type' 'array'
 assert_jq "$bootstrap" '.review_sources.agy.agents_run | length' '0'
+assert_jq "$bootstrap" '.review_sources.muse.last_reviewed_head' 'null'
+assert_jq "$bootstrap" '.review_sources.muse.last_reviewed_at' 'null'
+assert_jq "$bootstrap" '.review_sources.muse.posted_finding_ids | type' 'array'
+assert_jq "$bootstrap" '.review_sources.muse.posted_finding_ids | length' '0'
+assert_jq "$bootstrap" '.review_sources.muse.agents_run | type' 'array'
+assert_jq "$bootstrap" '.review_sources.muse.agents_run | length' '0'
 assert_jq "$bootstrap" '.agents_run | type' 'array'
 assert_jq "$bootstrap" '.agents_run | length' '0'
 assert_jq "$bootstrap" '(.agents_run == .review_sources.claude.agents_run)' 'true'
+
+# Muse source preservation: an existing review_sources.muse block must survive
+# re-upgrade with a different --last-writer (only skill/last_writer rotate).
+muse_input=$(cat <<'JSON'
+<!-- pr-review-metadata
+{
+  "schema_version": "1.1",
+  "created_by": "pr-review-and-document",
+  "last_writer": "pr-review-and-document",
+  "skill": "pr-review-and-document",
+  "review_sources": {
+    "muse": {
+      "last_reviewed_head": "jkl",
+      "last_reviewed_at": "2026-05-01T01:30:00Z",
+      "posted_finding_ids": ["muse:src/example.ts:fn:bug:1234"],
+      "agents_run": ["code-reviewer", "pr-test-analyzer"]
+    }
+  }
+}
+-->
+
+## PR Review
+JSON
+)
+muse_preserved=$(printf '%s\n' "$muse_input" | "$SCRIPT" --stdin --last-writer pr-review-resolver)
+assert_jq "$muse_preserved" '.last_writer' 'pr-review-resolver'
+assert_jq "$muse_preserved" '.review_sources.muse.last_reviewed_head' 'jkl'
+assert_jq "$muse_preserved" '.review_sources.muse.last_reviewed_at' '2026-05-01T01:30:00Z'
+assert_jq "$muse_preserved" '.review_sources.muse.posted_finding_ids | join(",")' 'muse:src/example.ts:fn:bug:1234'
+assert_jq "$muse_preserved" '.review_sources.muse.agents_run | join(",")' 'code-reviewer,pr-test-analyzer'
 
 echo "review-metadata-upgrade tests passed"

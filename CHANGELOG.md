@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-11-23
+
+Muse is now a first-class review producer alongside Claude, Codex, Grok, and Antigravity. This major release ships Muse marketplace packaging, Muse skills, and additive `review_sources.muse` metadata so Claude/Codex/Grok/Antigravity/Muse can share the same canonical PR comment.
+
+### Added
+
+- Muse plugin packaging: the shared `.agents/plugins/marketplace.json` catalog (also probed by Muse's marketplace resolver) plus `plugins/pr-review-toolkit/.muse-plugin/plugin.json` (native `schemaVersion: 1` manifest), installable from the GitHub public repo via `muse plugins marketplace add marxbiotech https://github.com/marxbiotech/pr-review-toolkit` and `muse plugins install pr-review-toolkit@marxbiotech`
+- Muse skills under `plugins/pr-review-toolkit/muse/skills/`: `muse-review-pass` (six-agent read-only review producer), `pr-review-and-document` (publisher), `gemini-review-integrator`, `pr-review-resolver` (interactive Traditional Chinese resolver), and `muse-fix-worker` (resolver-managed bounded fixer)
+- `review_sources.muse` in comment metadata schema 1.1 with `muse:` finding IDs and `[Muse]` labels, preserved by `review-metadata-upgrade.sh` and covered by `tests/review-metadata-upgrade-test.sh`
+- Muse integration design doc under `docs/muse-integration-design.md`
+
+### Changed
+
+- Document the Grok install pin `pr-review-toolkit@marxbiotech/pr-review-toolkit` so it does not collide with Anthropic's official plugin of the same name
+
 ## [5.0.0] - 2026-10-20
 
 Antigravity (`agy`) is now a first-class review producer alongside Claude, Gemini, Codex, and Grok. This major release ships native Antigravity plugin and GitHub Release marketplace packaging, Antigravity skills (`agy-review-pass`, `agy-fix-worker`, `gemini-review-integrator`, `pr-review-and-document`, `pr-review-resolver`), and additive `review_sources.agy` metadata so Claude, Gemini, Codex, Grok, and Antigravity can share the same canonical PR comment.

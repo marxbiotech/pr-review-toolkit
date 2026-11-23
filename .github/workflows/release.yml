@@ -8,6 +8,7 @@ on:
       - 'plugins/pr-review-toolkit/.codex-plugin/plugin.json'
       - 'plugins/pr-review-toolkit/.grok-plugin/plugin.json'
       - 'plugins/pr-review-toolkit/.antigravity-plugin/plugin.json'
+      - 'plugins/pr-review-toolkit/.muse-plugin/plugin.json'
 
 jobs:
   release:
@@ -37,7 +38,9 @@ jobs:
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"; exit 1; }
           G=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"; exit 1; }
-          if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ]; then
+          H=$(jq -e -r '.version' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.muse-plugin/plugin.json"; exit 1; }
+          if [ "$A" != "$B" ] || [ "$A" != "$C" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ] || [ "$A" != "$H" ]; then
             echo "::error::Refusing to tag: version drift across manifests"
             echo "  .claude-plugin/plugin.json:                                  $A"
             echo "  .claude-plugin/marketplace.json:                             $B"
@@ -46,9 +49,10 @@ jobs:
             echo "  .grok-plugin/marketplace.json:                               $E"
             echo "  plugins/pr-review-toolkit/.antigravity-plugin/plugin.json:   $F"
             echo "  .antigravity-plugin/marketplace.json:                        $G"
+            echo "  plugins/pr-review-toolkit/.muse-plugin/plugin.json:          $H"
             exit 1
           fi
-          echo "✓ All seven manifests at $A"
+          echo "✓ All eight manifests at $A"
 
       - name: Verify release artifacts
         run: |
@@ -61,7 +65,8 @@ jobs:
             plugins/pr-review-toolkit/.grok-plugin/plugin.json \
             .grok-plugin/marketplace.json \
             plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
-            .antigravity-plugin/marketplace.json
+            .antigravity-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.muse-plugin/plugin.json
 
           # Keep this manifest list in sync with validate.yml's required_files
           # and JSON syntax checks when adding packaging metadata files.
@@ -73,14 +78,15 @@ jobs:
             plugins/pr-review-toolkit/.grok-plugin/plugin.json \
             .grok-plugin/marketplace.json \
             plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
-            .antigravity-plugin/marketplace.json; do
+            .antigravity-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.muse-plugin/plugin.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Release blocked: missing artifact $f at HEAD"
               exit 1
             fi
           done
 
-          # Keep in sync with validate.yml's Codex and Grok skill loops.
+          # Keep in sync with validate.yml's Codex, Grok, and Muse skill loops.
           skill_count=0
           for skill_dir in plugins/pr-review-toolkit/codex/skills/*; do
             [ -d "$skill_dir" ] || continue
@@ -108,6 +114,21 @@ jobs:
           done
           if [ "$grok_skill_count" -eq 0 ]; then
             echo "::error::Release blocked: no Grok skills found under plugins/pr-review-toolkit/skills/"
+            exit 1
+          fi
+
+          muse_skill_count=0
+          for skill_dir in plugins/pr-review-toolkit/muse/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            muse_skill_count=$((muse_skill_count + 1))
+            skill_file="$skill_dir/SKILL.md"
+            if [ ! -f "$skill_file" ]; then
+              echo "::error::Release blocked: missing Muse skill $skill_file at HEAD"
+              exit 1
+            fi
+          done
+          if [ "$muse_skill_count" -eq 0 ]; then
+            echo "::error::Release blocked: no Muse skills found under plugins/pr-review-toolkit/muse/skills/"
             exit 1
           fi
 
@@ -207,6 +228,7 @@ jobs:
           echo '```' >> release_notes.md
           echo "" >> release_notes.md
           echo "For Codex, Grok, and Antigravity (AGY), this release includes packaged manifests under \`plugins/pr-review-toolkit/\`, plus \`pr-review-toolkit-agy.zip\` and \`marketplace.json\` attached to this release for Antigravity marketplace installation." >> release_notes.md
+          echo "For Muse, this release includes a native plugin manifest at \`plugins/pr-review-toolkit/.muse-plugin/plugin.json\` and skills under \`plugins/pr-review-toolkit/muse/skills/\`, installable via the shared marketplace catalog at \`.agents/plugins/marketplace.json\`." >> release_notes.md
 
           cat release_notes.md
         env:

@@ -58,7 +58,8 @@ jobs:
             "plugins/pr-review-toolkit/.grok-plugin/plugin.json:.version" \
             ".grok-plugin/marketplace.json:.plugins[0].version" \
             "plugins/pr-review-toolkit/.antigravity-plugin/plugin.json:.version" \
-            ".antigravity-plugin/marketplace.json:.plugins[0].version"; do
+            ".antigravity-plugin/marketplace.json:.plugins[0].version" \
+            "plugins/pr-review-toolkit/.muse-plugin/plugin.json:.version"; do
             file="${spec%%:*}"
             path="${spec#*:}"
             tmp=$(mktemp)
@@ -138,11 +139,13 @@ jobs:
             echo "::error::Failed to read .version from plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"; exit 1; }
           G=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"; exit 1; }
-          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ]; then
-            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C D=$D E=$E F=$F G=$G"
+          H=$(jq -e -r '.version' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.muse-plugin/plugin.json"; exit 1; }
+          if [ "$A" != "$NEW_VERSION" ] || [ "$B" != "$NEW_VERSION" ] || [ "$C" != "$NEW_VERSION" ] || [ "$A" != "$D" ] || [ "$A" != "$E" ] || [ "$A" != "$F" ] || [ "$A" != "$G" ] || [ "$A" != "$H" ]; then
+            echo "::error::Atomic bump failed. Expected $NEW_VERSION, got A=$A B=$B C=$C D=$D E=$E F=$F G=$G H=$H"
             exit 1
           fi
-          echo "✓ All seven manifests at $NEW_VERSION"
+          echo "✓ All eight manifests at $NEW_VERSION"
 
       - name: Commit and push
         env:
@@ -160,6 +163,7 @@ jobs:
             .grok-plugin/marketplace.json \
             plugins/pr-review-toolkit/.antigravity-plugin/plugin.json \
             .antigravity-plugin/marketplace.json \
+            plugins/pr-review-toolkit/.muse-plugin/plugin.json \
             CHANGELOG.md
           git commit -m "chore: bump version to $NEW_VERSION"
           git push

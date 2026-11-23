@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/github/v/release/marxbiotech/pr-review-toolkit?label=version)](https://github.com/marxbiotech/pr-review-toolkit/releases)
 [![License](https://img.shields.io/github/license/marxbiotech/pr-review-toolkit)](LICENSE)
 
-A Claude Code plugin for comprehensive PR review workflow, with companion Codex, Grok, and Antigravity (`agy`) packaging: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
+A Claude Code plugin for comprehensive PR review workflow, with companion Codex, Grok, Antigravity (`agy`), and Muse packaging: execute reviews, integrate Gemini suggestions, and interactively resolve issues.
 
 > **Latest:** See [CHANGELOG.md](CHANGELOG.md) for release notes | [Releases](https://github.com/marxbiotech/pr-review-toolkit/releases) for downloads
 
@@ -110,21 +110,21 @@ This repository also includes a Grok marketplace at `.grok-plugin/marketplace.js
 | **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
 | **grok-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
 
-Do not `grok plugin install .` at the repository root: that loads the Claude plugin (`pr-workflow`) and its Claude skills. Add the repo as a Grok marketplace and install `pr-review-toolkit`:
+Do not `grok plugin install .` at the repository root: that loads the Claude plugin (`pr-workflow`) and its Claude skills. Add the repo as a Grok marketplace and pin this plugin — Anthropic's official marketplace also ships a plugin named `pr-review-toolkit`, so the unqualified name is ambiguous:
 
 ```bash
 git clone https://github.com/marxbiotech/pr-review-toolkit.git
 cd pr-review-toolkit
 jq empty .grok-plugin/marketplace.json plugins/pr-review-toolkit/.grok-plugin/plugin.json
 grok plugin marketplace add .
-grok plugin install pr-review-toolkit --trust
+grok plugin install pr-review-toolkit@marxbiotech/pr-review-toolkit --trust
 ```
 
 From GitHub:
 
 ```bash
 grok plugin marketplace add marxbiotech/pr-review-toolkit
-grok plugin install pr-review-toolkit --trust
+grok plugin install pr-review-toolkit@marxbiotech/pr-review-toolkit --trust
 ```
 
 Set the toolkit root for source-tree Grok sessions that run these skills without a trusted plugin install. Point it at the packaged plugin root:
@@ -175,6 +175,50 @@ agy plugin install pr-review-toolkit@marxbiotech
 ```
 
 See [`docs/agy-integration-design.md`](docs/agy-integration-design.md) for the full Antigravity architecture and contract.
+
+### Muse Plugin (From GitHub Marketplace)
+
+This repository also ships a Muse native plugin: the shared marketplace catalog at `.agents/plugins/marketplace.json` (also probed by Muse's marketplace resolver) points at the packaged plugin directory `./plugins/pr-review-toolkit`, whose Muse manifest at `plugins/pr-review-toolkit/.muse-plugin/plugin.json` (`schemaVersion: 1`) declares skills under `plugins/pr-review-toolkit/muse/skills/`, sharing the same helper scripts under `plugins/pr-review-toolkit/scripts/`:
+
+| Skill | Description |
+|-------|-------------|
+| **muse-review-pass** | Run six read-only Muse review subagents in parallel and return one deduplicated review bundle |
+| **pr-review-and-document** | Publish the Muse review bundle to the canonical PR review comment and `.pr-review-cache/pr-{N}.json` |
+| **gemini-review-integrator** | Integrate Gemini Code Assist inline comments into the canonical PR review comment |
+| **pr-review-resolver** | Interactively resolve unresolved PR review findings one by one in Traditional Chinese and coordinate fix decisions |
+| **muse-fix-worker** | Resolver-managed worker that fixes one selected issue with bounded owned files and reports validation results |
+
+Install from the GitHub public repo as a Muse marketplace:
+
+```bash
+muse plugins marketplace add marxbiotech https://github.com/marxbiotech/pr-review-toolkit
+muse plugins install pr-review-toolkit@marxbiotech
+```
+
+From a local clone:
+
+```bash
+git clone https://github.com/marxbiotech/pr-review-toolkit.git
+cd pr-review-toolkit
+jq empty .agents/plugins/marketplace.json plugins/pr-review-toolkit/.muse-plugin/plugin.json
+muse plugins marketplace add marxbiotech .
+muse plugins install pr-review-toolkit@marxbiotech
+```
+
+Validate without installing:
+
+```bash
+muse plugins validate plugins/pr-review-toolkit
+muse skills validate plugins/pr-review-toolkit/muse/skills/pr-review-and-document
+```
+
+Set the toolkit root for Muse sessions that run these skills from a source tree without a plugin install. Point it at the packaged plugin root:
+
+```bash
+export PR_REVIEW_TOOLKIT_ROOT=/path/to/pr-review-toolkit/plugins/pr-review-toolkit
+```
+
+Muse review is split the same way as Codex and Grok. `muse-review-pass` is read-only: it launches the six review subagents and returns a normalized bundle. `pr-review-and-document` owns review publishing. `pr-review-resolver` is the interactive decision coordinator. `muse-fix-worker` is resolver-managed only. See [`docs/muse-integration-design.md`](docs/muse-integration-design.md).
 
 ## Usage
 
@@ -233,6 +277,28 @@ Resolve existing review findings one by one with Grok. The resolver discusses ea
 
 ```
 Resolve PR review findings with Grok
+```
+
+### Muse PR Review and Document
+
+Run a Muse review with six parallel read-only review subagents, then publish one canonical PR comment:
+
+```
+Run a Muse PR review and document the results
+```
+
+For analysis only, without writing the PR comment, ask for:
+
+```
+Run a Muse review pass
+```
+
+### Muse PR Review Resolver
+
+Resolve existing review findings one by one with Muse. The resolver discusses each unresolved item in Traditional Chinese, asks for a decision, coordinates bounded fix work, and updates the canonical review comment through `.pr-review-cache`:
+
+```
+Resolve PR review findings with Muse
 ```
 
 ### Codex Gemini Review Integrator

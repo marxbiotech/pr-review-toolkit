@@ -25,6 +25,7 @@ jobs:
           jq empty .grok-plugin/marketplace.json
           jq empty plugins/pr-review-toolkit/.antigravity-plugin/plugin.json
           jq empty .antigravity-plugin/marketplace.json
+          jq empty plugins/pr-review-toolkit/.muse-plugin/plugin.json
           echo "✅ JSON syntax is valid"
 
       - name: Validate required files exist
@@ -43,6 +44,7 @@ jobs:
             ".grok-plugin/marketplace.json"
             "plugins/pr-review-toolkit/.antigravity-plugin/plugin.json"
             ".antigravity-plugin/marketplace.json"
+            "plugins/pr-review-toolkit/.muse-plugin/plugin.json"
             "README.md"
             "LICENSE"
           )
@@ -111,6 +113,10 @@ jobs:
             echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"
             exit 1
           }
+          MUSE_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.muse-plugin/plugin.json"
+            exit 1
+          }
 
           # Semver regex pattern
           SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$'
@@ -157,6 +163,12 @@ jobs:
           fi
           echo "✅ .antigravity-plugin/marketplace.json plugins[0].version: $AGY_MARKETPLACE_PLUGIN_VERSION"
 
+          if [[ ! "$MUSE_PLUGIN_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "❌ Invalid semver in plugins/pr-review-toolkit/.muse-plugin/plugin.json: $MUSE_PLUGIN_VERSION"
+            exit 1
+          fi
+          echo "✅ plugins/pr-review-toolkit/.muse-plugin/plugin.json version: $MUSE_PLUGIN_VERSION"
+
       - name: Validate version consistency
         run: |
           set -euo pipefail
@@ -187,6 +199,10 @@ jobs:
           }
           AGY_MARKETPLACE_PLUGIN_VERSION=$(jq -e -r '.plugins[0].version' .antigravity-plugin/marketplace.json) || {
             echo "::error::Failed to read .plugins[0].version from .antigravity-plugin/marketplace.json"
+            exit 1
+          }
+          MUSE_PLUGIN_VERSION=$(jq -e -r '.version' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .version from plugins/pr-review-toolkit/.muse-plugin/plugin.json"
             exit 1
           }
 
@@ -241,6 +257,15 @@ jobs:
             echo "   .antigravity-plugin/marketplace.json plugins: $AGY_MARKETPLACE_PLUGIN_VERSION"
             echo ""
             echo "Claude and Antigravity (AGY) marketplace plugin versions must match."
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$MUSE_PLUGIN_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   .claude-plugin/plugin.json: $PLUGIN_VERSION"
+            echo "   plugins/pr-review-toolkit/.muse-plugin/plugin.json:  $MUSE_PLUGIN_VERSION"
+            echo ""
+            echo "Claude and Muse plugin manifests must ship the same plugin version."
             exit 1
           fi
 
@@ -476,6 +501,48 @@ jobs:
           echo "✅ AGY plugin name: $AGY_PLUGIN_NAME"
           echo "✅ AGY plugin description: $AGY_PLUGIN_DESC"
           echo "✅ AGY marketplace entry: $AGY_MARKETPLACE_NAME -> $AGY_MARKETPLACE_URL"
+          MUSE_PLUGIN_NAME=$(jq -e -r '.name' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .name from plugins/pr-review-toolkit/.muse-plugin/plugin.json"
+            exit 1
+          }
+          MUSE_PLUGIN_DESC=$(jq -e -r '.description' plugins/pr-review-toolkit/.muse-plugin/plugin.json) || {
+            echo "::error::Failed to read .description from plugins/pr-review-toolkit/.muse-plugin/plugin.json"
+            exit 1
+          }
+          MUSE_MARKETPLACE_NAME=$(jq -e -r '.plugins[0].name' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].name from .agents/plugins/marketplace.json"
+            exit 1
+          }
+          MUSE_MARKETPLACE_PATH=$(jq -e -r '.plugins[0].source.path' .agents/plugins/marketplace.json) || {
+            echo "::error::Failed to read .plugins[0].source.path from .agents/plugins/marketplace.json"
+            exit 1
+          }
+
+          if [ -z "$MUSE_PLUGIN_NAME" ] || [ "$MUSE_PLUGIN_NAME" = "null" ]; then
+            echo "❌ Missing 'name' in plugins/pr-review-toolkit/.muse-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ -z "$MUSE_PLUGIN_DESC" ] || [ "$MUSE_PLUGIN_DESC" = "null" ]; then
+            echo "❌ Missing 'description' in plugins/pr-review-toolkit/.muse-plugin/plugin.json"
+            exit 1
+          fi
+
+          if [ "$MUSE_MARKETPLACE_NAME" != "$MUSE_PLUGIN_NAME" ]; then
+            echo "❌ Muse marketplace plugin name must match plugins/pr-review-toolkit/.muse-plugin/plugin.json name"
+            echo "   marketplace: $MUSE_MARKETPLACE_NAME"
+            echo "   plugin.json: $MUSE_PLUGIN_NAME"
+            exit 1
+          fi
+
+          if [ "$MUSE_MARKETPLACE_PATH" != "./plugins/pr-review-toolkit" ]; then
+            echo "❌ Muse marketplace source.path must point at ./plugins/pr-review-toolkit, got: $MUSE_MARKETPLACE_PATH"
+            exit 1
+          fi
+
+          echo "✅ Muse plugin name: $MUSE_PLUGIN_NAME"
+          echo "✅ Muse plugin description: $MUSE_PLUGIN_DESC"
+          echo "✅ Muse marketplace entry: $MUSE_MARKETPLACE_NAME -> $MUSE_MARKETPLACE_PATH"
 
       - name: Check script parity
         uses: ./.github/actions/check-script-parity
@@ -664,6 +731,63 @@ jobs:
           fi
           echo "Validated $skill_count Grok skill(s)"
 
+      - name: Validate Muse skills
+        run: |
+          set -euo pipefail
+          echo "Validating Muse skill frontmatter..."
+
+          skill_count=0
+          for skill_dir in plugins/pr-review-toolkit/muse/skills/*; do
+            [ -d "$skill_dir" ] || continue
+            skill_count=$((skill_count + 1))
+            skill_name=$(basename "$skill_dir")
+            skill_file="$skill_dir/SKILL.md"
+
+            if [ ! -f "$skill_file" ]; then
+              echo "❌ Missing Muse skill file: $skill_file"
+              exit 1
+            fi
+
+            first_line=$(head -n 1 "$skill_file")
+            if [ "$first_line" != "---" ]; then
+              echo "::error::$skill_file: opening '---' frontmatter delimiter must be on line 1 (got: '$first_line')"
+              exit 1
+            fi
+            fm=$(awk 'NR==1 && /^---[[:space:]]*$/ {in_fm=1; next}
+                      in_fm && /^---[[:space:]]*$/ {exit}
+                      in_fm {print}' "$skill_file")
+            if [ -z "$fm" ]; then
+              echo "::error::$skill_file: missing closing '---' frontmatter delimiter"
+              exit 1
+            fi
+
+            name=$(printf '%s\n' "$fm" | yq -r '.name // ""')
+            desc=$(printf '%s\n' "$fm" | yq -r '.description // ""')
+
+            if [ "$name" != "$skill_name" ]; then
+              echo "::error::name mismatch: '$name' != '$skill_name' in $skill_file"
+              exit 1
+            fi
+
+            if [ -z "$desc" ]; then
+              echo "::error::Empty or missing description in $skill_file"
+              exit 1
+            fi
+
+            if ! grep -q 'PR_REVIEW_TOOLKIT_ROOT' "$skill_file"; then
+              echo "❌ Muse skill must document PR_REVIEW_TOOLKIT_ROOT: $skill_file"
+              exit 1
+            fi
+
+            echo "✅ Muse skill: $skill_name"
+          done
+
+          if [ "$skill_count" -eq 0 ]; then
+            echo "::error::No Muse skills found under plugins/pr-review-toolkit/muse/skills/"
+            exit 1
+          fi
+          echo "Validated $skill_count Muse skill(s)"
+
       - name: Validate SKILL.md script references resolve
         # Greps every Codex SKILL.md for ${PR_REVIEW_TOOLKIT_ROOT}/scripts/<name>.sh references
         # and asserts each named script exists and is executable in BOTH script trees
@@ -684,6 +808,7 @@ jobs:
           skill_files=(
             plugins/pr-review-toolkit/codex/skills/*/SKILL.md
             plugins/pr-review-toolkit/skills/*/SKILL.md
+            plugins/pr-review-toolkit/muse/skills/*/SKILL.md
           )
           if [ "${#skill_files[@]}" -eq 0 ]; then
             echo "::error::No SKILL.md files found under plugins/pr-review-toolkit/{codex/,}skills/*/ — has a skill directory moved?"
@@ -805,6 +930,22 @@ jobs:
             exit 1
           fi
           echo "✅ agy-fix-worker SKILL.md does not call review-state scripts"
+
+      - name: Lock muse-fix-worker resolver-managed contract
+        run: |
+          set -euo pipefail
+          worker_skill="plugins/pr-review-toolkit/muse/skills/muse-fix-worker/SKILL.md"
+
+          forbidden_pattern='(cache-(read|write)-comment|cache-sync|cache-cleanup|find-review-comment|review-metadata-(upgrade|replace)|upsert-review-comment|gh[[:space:]]+api)'
+
+          if awk '
+              /^[ ]{0,3}(```|~~~)/ { in_fence = !in_fence; print; next }
+              in_fence { print }
+            ' "$worker_skill" | grep -qE "$forbidden_pattern"; then
+            echo "::error::$worker_skill contains a fenced reference to a forbidden review-state script or API. muse-fix-worker must not call any of: cache-(read|write)-comment, cache-sync, cache-cleanup, find-review-comment, review-metadata-(upgrade|replace), upsert-review-comment, or 'gh api'. Move review-state work into pr-review-resolver."
+            exit 1
+          fi
+          echo "✅ muse-fix-worker SKILL.md does not call review-state scripts"
 
       - name: Reject PR-round identifiers in source
         # Delegated to scripts/check-pr-round-identifiers.sh so the lint

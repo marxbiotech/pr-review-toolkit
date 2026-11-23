@@ -19,18 +19,18 @@ plugins/pr-review-toolkit/
   codex/skills/           Codex skills (unchanged)
 ```
 
-Do not install the repository root as a Grok plugin. The root `.claude-plugin/` manifest is the Claude plugin (`pr-workflow`) and would load Claude skills. Add this repo as a Grok marketplace and install `pr-review-toolkit`:
+Do not install the repository root as a Grok plugin. The root `.claude-plugin/` manifest is the Claude plugin (`pr-workflow`) and would load Claude skills. Add this repo as a Grok marketplace and pin this plugin. Anthropic's `claude-plugins-official` marketplace also provides a plugin named `pr-review-toolkit`, so Grok requires a qualifier:
 
 ```bash
 grok plugin marketplace add marxbiotech/pr-review-toolkit
-grok plugin install pr-review-toolkit --trust
+grok plugin install pr-review-toolkit@marxbiotech/pr-review-toolkit --trust
 ```
 
 Local source:
 
 ```bash
 grok plugin marketplace add .
-grok plugin install pr-review-toolkit --trust
+grok plugin install pr-review-toolkit@marxbiotech/pr-review-toolkit --trust
 ```
 
 ## Skills
